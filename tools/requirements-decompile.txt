@@ -1,0 +1,10 @@
+# Offline analysis tooling for iOSCleanerInspector (deps of tools/decompile/)
+#
+#   python -m venv tools/venv
+#   tools/venv/Scripts/pip install -r tools/requirements-decompile.txt   # Windows
+#   tools/venv/bin/pip   install -r tools/requirements-decompile.txt     # macOS / Linux
+#
+# extract_entitlements.py only needs the standard library; these two are for
+# cross-checking and for objc_method_strings.py.
+macholib>=1.16
+capstone>=5.0

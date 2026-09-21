@@ -138,25 +138,76 @@ iOS 上 `/var` 是指向 `/private/var` 的符号链接，`/tmp` 指向 `/privat
 | 分类 | iOSCleanerPro | 本工具 0.2.2 | 差 |
 | --- | --- | --- | --- |
 | 临时文件 | 990.71 M | `/tmp` 986.82 MiB + Downloads 3.89 MiB = **990.71 MiB** | **完全一致** |
-| 照片缓存 | 335.59 M | PhotoData/Caches + Thumbnails = 355.59 MiB | −20.00 MiB |
-| 系统缓存 | 2.24 G | `Library/Caches` = 1.50 GiB | +0.74 GiB |
-| 应用缓存 | 17.92 G | 168 个容器（Caches + tmp）= 21.11 GiB | −3.19 GiB |
+| 照片缓存 | 335.59 M | PhotoData/Caches + Thumbnails = 355.59 MiB；只算 Thumbnails = 335.19 MiB | ≈0（只算缩略图） |
+| 系统缓存 | 2.24 G | `Library/Caches` = 1.50 GiB；+Apple 容器 = 2.06 GiB | **+0.72 GiB 未对上** |
+| 应用缓存 | 17.92 G | 168 个容器 **仅 `Library/Caches`** = **17.93 GiB** | ≈0（差 0.01） |
 
 「临时文件」两项完全对上，是很硬的证据：**我们的遍历方式和它是一致的**
 （同一批文件、同样的字节数、同样的单位），所以上面的差异不是"算法不同"，而是**分桶边界不同**。
 
 剩下的差异有两个候选解释，0.2.3 的分类小计就是用来二选一的：
 
-- **假设 A**：它的「系统缓存」= `/var/mobile/Library/Caches` **+ Apple 自家 App 的容器**
-  （0.74 GiB 的量级正好对得上 2.24 − 1.50）；「应用缓存」因此只剩第三方容器。
-- **假设 B**：它的「应用缓存」**不算容器里的 `tmp`**，只算 `Library/Caches`。
-  剩下 2.45 GiB 的缺口正好是这个量级。
+0.2.3 的分类小计出来后，**假设 B 成立，假设 A 不成立**：
 
-照片那 20.00 MiB 的差更可能是两次扫描之间 PhotoData 的自然变动，也可能是它没算 `PhotoData/Caches`；
-小计出来后一次就能定。
+- **应用缓存 = 所有容器（含 com.apple.*）的 `Library/Caches`，不含 `tmp`** —— 17.93 vs 17.92 GiB，差 0.01。
+  所以它**不区分 Apple / 第三方**，也**不统计容器里的 tmp**（我们 0.2.2 才加的那 3.20 GiB tmp，它看不到）。
+- **照片缓存 ≈ 只算 `PhotoData/Thumbnails`**（335.19 vs 335.59 MiB，差 0.4 MiB 属扫描间隔的自然变动）。
+  `PhotoData/Caches` 那 20.44 MiB 它没算进照片桶。
+
+**还剩「系统缓存」对不上 0.72 GiB**：它显示 2.24 G，我们最大口径也只有 2.06 GiB
+（Caches 1.50 + Logs 0.02 + Apple 容器 0.56）。差的这部分大概率在我们没扫的位置上 ——
+候选是 `/var/mobile/Containers/Shared/`（App Group 共享容器）和 `/var/containers/` 下的系统容器，
+这两个我们都没扫。下一步可以加进去试试。
 
 0.2.3 起报告末尾会打印这几个桶的**多种组合**（Caches 单独、含 tmp、Apple/第三方拆分），
 并且用二进制单位显示，直接跟它界面上的数字对。
+
+## 反编译：它到底扫哪些目录（已确认）
+
+用 `tools/decompile/objc_method_strings.py` 做了真正的静态还原（走
+`__objc_classlist → class_ro_t → method_list_t → 反汇编 → CFString / @[] 字面量`，
+注意 iOS 15+ 的 `__DATA*` 里是指针是 **dyld chained fixup**，要取低 36 位才是真地址）。
+
+`-[CacheManager setupCachePaths]`（imp `0x100009adc`，`init` 里同样一份）引用的全部路径字面量：
+
+```text
+@[ /var/tmp, /tmp, /var/mobile/Library/Caches, /var/mobile/Library/Logs ]   ← 4 元素数组字面量
+   /var/mobile/Library/Preferences/Logs
+   /var/mobile/Media/Downloads
+@[ /var/mobile/Media/PhotoData/Caches, /var/mobile/Media/PhotoData/Thumbnails ]
+   /var/mobile/Containers/Data/Application
+```
+
+所以它的真实扫描面和我们的扫描面是**同一套**（0.2.2 补 Downloads 之后）：
+
+| 路径 | 它 | 我们 |
+| --- | --- | --- |
+| `/tmp`、`/var/tmp` | 有（在同一个 4 元素数组里） | 有（去重后只计一次） |
+| `Library/Caches`、`Library/Logs`、`Preferences/Logs` | 有 | 有 |
+| `Media/Downloads`、`PhotoData/Caches`、`PhotoData/Thumbnails` | 有 | 有 |
+| `Containers/Data/Application` | 有 | 有 |
+
+`-[CacheManager getAllApplicationsInfo]`（imp `0x10000b968`）证实它读的是
+`Library/Preferences/.com.apple.mobile_container_manager.metadata.plist` 里的 `MCMMetadataIdentifier`
+（由 UUID 反查 bundle id），再拼 `Library/Caches` 算体积 —— 与我们 0.2.2 起的做法一致。
+
+### 顺带挖到：5 条写死的假数据
+
+`__objc_arraydata` 里有 5 份硬编码字典，字段是 `bundleIdentifier` / `cachePath` / `cacheSize` / `cacheSizeFormatted`：
+
+| bundle id | cachePath | cacheSizeFormatted（写死） |
+| --- | --- | --- |
+| com.apple.mobilesafari | `.../Application/Safari/Library/Caches` | **150.00 MB** |
+| com.apple.mobilemail | `.../Application/Mail/Library/Caches` | **85.00 MB** |
+| com.apple.mobilenotes | `.../Application/Notes/Library/Caches` | **45.00 MB** |
+| com.apple.weather | `.../Application/Weather/Library/Caches` | **30.00 MB** |
+| com.apple.calculator | `.../Application/Calculator/Library/Caches` | **5.00 MB** |
+
+我已经把上一轮"写死展示项"的判断收回过一次（它确实有真实枚举），现在证据更细：
+**两套都在** —— 真实枚举（`getAllApplicationsInfo`）+ 一份写死的整数大小兜底数据。
+真机的「应用缓存 17.92G」等于我们 168 个容器 `Library/Caches` 的 17.93 GiB，
+说明展示用的是真实枚举结果；这份兜底数据大概是枚举出结果前/失败时的占位。
+（我没法证明它一定不会显示，只是它显示的数字与真实值吻合。）
 
 ---
 
