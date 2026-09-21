@@ -2,6 +2,32 @@
 #import "AppScanner.h"
 #import "SystemScanner.h"
 
+#include <dirent.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+NSString *_Nullable AccessFailure(NSString *path) {
+    const char *p = path.fileSystemRepresentation;
+
+    struct stat st;
+    if (stat(p, &st) != 0) {
+        int e = errno;
+        return [NSString stringWithFormat:@"stat() failed errno=%d (%s)", e, strerror(e)];
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        DIR *dir = opendir(p);
+        if (dir == NULL) {
+            int e = errno;
+            return [NSString stringWithFormat:@"opendir() failed errno=%d (%s)", e, strerror(e)];
+        }
+        closedir(dir);
+    }
+    return nil;
+}
+
 @implementation Scanner
 
 + (instancetype)shared {
@@ -27,16 +53,18 @@
 
 - (NSString *)fullReadOnlyReport {
     NSMutableString *out = [NSMutableString string];
-    [out appendString:@"iOS Cleaner Inspector 0.1.0\\n"];
-    [out appendString:@"READ-ONLY MODE — NO FILE DELETION\\n"];
-    [out appendString:@"================================\\n\\n"];
+    [out appendString:@"iOS Cleaner Inspector 0.2.0\n"];
+    [out appendString:@"READ-ONLY MODE - NO FILE DELETION\n"];
+    [out appendFormat:@"running as uid=%d euid=%d gid=%d egid=%d\n",
+        (int)getuid(), (int)geteuid(), (int)getgid(), (int)getegid()];
+    [out appendString:@"================================\n\n"];
 
     [out appendString:[[SystemScanner shared] scanReport]];
-    [out appendString:@"\\n"];
+    [out appendString:@"\n"];
     [out appendString:[[AppScanner shared] scanReport]];
 
-    [out appendString:@"\\n================================\\n"];
-    [out appendString:@"Scan complete.\\n"];
+    [out appendString:@"\n================================\n"];
+    [out appendString:@"Scan complete.\n"];
     return out;
 }
 

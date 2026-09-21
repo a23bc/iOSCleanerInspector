@@ -1,4 +1,5 @@
 #import "AppScanner.h"
+#import "Scanner.h"
 
 @implementation AppScanner
 
@@ -46,12 +47,18 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
     NSFileManager *fm = NSFileManager.defaultManager;
 
     NSMutableString *out =
-        [NSMutableString stringWithString:@"\\nAPP CONTAINERS\\n--------------\\n"];
+        [NSMutableString stringWithString:@"\nAPP CONTAINERS\n--------------\n\n"];
+
+    NSString *failure = AccessFailure(root);
+    if (failure) {
+        [out appendFormat:@"[NO ACCESS] %@\n    cause: %@\n", root, failure];
+        return out;
+    }
 
     NSArray *entries = [fm contentsOfDirectoryAtPath:root error:nil];
 
     if (!entries) {
-        [out appendFormat:@"[NO ACCESS] %@\\n", root];
+        [out appendFormat:@"[NO ACCESS] %@\n    cause: contentsOfDirectoryAtPath returned nil\n", root];
         return out;
     }
 
@@ -79,10 +86,10 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
             grandTotal += cacheSize + tmpSize;
 
             [out appendFormat:
-                @"\\nContainer: %@\\n"
-                 "  Library/Caches: %llu bytes (%lu files)\\n"
-                 "  tmp:            %llu bytes (%lu files)\\n"
-                 "  total:          %llu bytes\\n",
+                @"\nContainer: %@\n"
+                 "  Library/Caches: %llu bytes (%lu files)\n"
+                 "  tmp:            %llu bytes (%lu files)\n"
+                 "  total:          %llu bytes\n",
                  uuid,
                  cacheSize, (unsigned long)files,
                  tmpSize, (unsigned long)tmpFiles,
@@ -90,7 +97,7 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
         }
     }
 
-    [out appendFormat:@"\\nApps with cache/tmp data: %lu\\nTotal: %llu bytes\\n",
+    [out appendFormat:@"\nApps with cache/tmp data: %lu\nTotal: %llu bytes\n",
         (unsigned long)appCount, grandTotal];
 
     return out;

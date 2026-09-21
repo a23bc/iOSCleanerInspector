@@ -24,7 +24,7 @@
     self.output = [[UITextView alloc] init];
     self.output.editable = NO;
     self.output.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
-    self.output.text = @"Ready.\\n\\nThis app never deletes files.\\n";
+    self.output.text = @"Ready.\n\nThis app never deletes files.\n";
 
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
         self.scanButton, self.output
@@ -45,7 +45,7 @@
 
 - (void)scan:(id)sender {
     self.scanButton.enabled = NO;
-    self.output.text = @"Scanning...\\n";
+    self.output.text = @"Scanning...\n";
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSString *report = [[Scanner shared] fullReadOnlyReport];

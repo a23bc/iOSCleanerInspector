@@ -2,35 +2,86 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+  Entitlement set for iOSCleanerInspector (read-only audit tool).
+
+  Sources / evidence for every key below:
+    1. Dumped from the binary actually being audited
+       (iOSCleanerPro.tipa, arm64 slice, CSSLOT_ENTITLEMENTS) via
+       tools/decompile/extract_entitlements.py.
+    2. TrollStore upstream entitlements (opa334/TrollStore) for the canonical
+       unsandboxing + container-access keys.
+    3. Apple "App Sandbox Temporary Exception Entitlements": a path naming a
+       DIRECTORY must end with a slash, otherwise the exception covers only the
+       exact path node and not its children.
+
+  Least-privilege note: this app never writes. All file exceptions therefore use
+  the read-only variants even though the audited app uses read-write.
+-->
 <dict>
+    <!-- Treat as a system/platform binary; prerequisite for the keys below. -->
     <key>platform-application</key>
     <true/>
+
+    <!-- Unsandboxing. TrollStore lists exactly these three as the supported
+         switch; the audited app only had the first two, which is the likely
+         reason it did not get through on device. -->
+    <key>com.apple.private.security.container-required</key>
+    <false/>
     <key>com.apple.private.security.no-container</key>
+    <true/>
+    <key>com.apple.private.security.no-sandbox</key>
     <true/>
     <key>com.apple.private.security.sandbox</key>
     <false/>
+
+    <!-- "Unrestricted accessible containers": this single key is what makes
+         TrollStore show "Accessible Containers: Unrestricted". -->
     <key>com.apple.private.security.storage.AppDataContainers</key>
+    <true/>
+    <key>com.apple.private.security.storage.AppBundles</key>
     <true/>
     <key>com.apple.private.security.storage.MobileDocuments</key>
     <true/>
+
+    <!-- Resolve container UUID -> app display name. -->
     <key>com.apple.private.MobileContainerManager.allowed</key>
     <true/>
     <key>com.apple.private.coreservices.canmaplsdatabase</key>
     <true/>
-    <key>com.apple.security.exception.files.absolute-path.read-write</key>
+
+    <!-- Every directory below ends with "/": without the trailing slash the
+         exception applies to the node itself, not to its contents. -->
+    <key>com.apple.security.exception.files.absolute-path.read-only</key>
     <array>
         <string>/</string>
-        <string>/var</string>
-        <string>/var/mobile</string>
-        <string>/var/mobile/Library</string>
-        <string>/var/mobile/Library/Caches</string>
-        <string>/var/mobile/Library/Logs</string>
-        <string>/var/mobile/Media</string>
-        <string>/var/mobile/Containers</string>
-        <string>/var/mobile/Containers/Data</string>
-        <string>/var/mobile/Containers/Data/Application</string>
-        <string>/tmp</string>
-        <string>/var/tmp</string>
+        <string>/private/</string>
+        <string>/tmp/</string>
+        <string>/var/</string>
+        <string>/var/tmp/</string>
+        <string>/var/containers/</string>
+        <string>/var/containers/Bundle/</string>
+        <string>/var/containers/Bundle/Application/</string>
+        <string>/var/containers/Data/</string>
+        <string>/var/mobile/</string>
+        <string>/var/mobile/Containers/</string>
+        <string>/var/mobile/Containers/Data/</string>
+        <string>/var/mobile/Containers/Data/Application/</string>
+        <string>/var/mobile/Containers/Shared/</string>
+        <string>/var/mobile/Library/</string>
+        <string>/var/mobile/Library/Caches/</string>
+        <string>/var/mobile/Library/Logs/</string>
+        <string>/var/mobile/Library/Preferences/</string>
+        <string>/var/mobile/Library/Preferences/Logs/</string>
+        <string>/var/mobile/Library/Mobile Documents/</string>
+        <string>/var/mobile/Media/</string>
+        <string>/var/mobile/Media/PhotoData/</string>
+        <string>/var/mobile/Media/PhotoData/Caches/</string>
+        <string>/var/mobile/Media/PhotoData/Thumbnails/</string>
+    </array>
+    <key>com.apple.security.exception.files.home-relative-path.read-only</key>
+    <array>
+        <string>/</string>
     </array>
 </dict>
 </plist>

@@ -1,4 +1,5 @@
 #import "SystemScanner.h"
+#import "Scanner.h"
 
 @implementation SystemScanner
 
@@ -8,6 +9,8 @@
     dispatch_once(&onceToken, ^{ s = [SystemScanner new]; });
     return s;
 }
+
+/* AccessFailure() comes from Scanner.h / Scanner.m. */
 
 static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteger *dirs) {
     NSFileManager *fm = NSFileManager.defaultManager;
@@ -53,20 +56,18 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
         @"/var/mobile/Media/PhotoData/Thumbnails"
     ];
 
-    NSMutableString *out = [NSMutableString stringWithString:@"SYSTEM / GLOBAL PATHS\\n----------------------\\n"];
+    NSMutableString *out = [NSMutableString stringWithString:@"SYSTEM / GLOBAL PATHS\n----------------------\n\n"];
 
     for (NSString *path in paths) {
-        NSUInteger files = 0, dirs = 0;
-        BOOL isDir = NO;
-        BOOL exists = [NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDir];
-
-        if (!exists) {
-            [out appendFormat:@"[NO ACCESS / NOT FOUND] %@\\n", path];
+        NSString *failure = AccessFailure(path);
+        if (failure) {
+            [out appendFormat:@"[NO ACCESS] %@\n    cause: %@\n\n", path, failure];
             continue;
         }
 
+        NSUInteger files = 0, dirs = 0;
         unsigned long long size = SizeOfTree(path, &files, &dirs);
-        [out appendFormat:@"\\n%@\\n  size: %llu bytes\\n  files: %lu\\n  dirs: %lu\\n",
+        [out appendFormat:@"%@\n  size: %llu bytes\n  files: %lu\n  dirs: %lu\n\n",
             path, size, (unsigned long)files, (unsigned long)dirs];
     }
 

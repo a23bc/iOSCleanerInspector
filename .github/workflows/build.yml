@@ -19,10 +19,20 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           clang --version
 
-      - name: Build TIPA
+      - name: Build signed TIPA
         run: |
-          chmod +x /usr/bin/true
           make package
+
+      - name: Verify code signature and entitlements
+        run: |
+          set -euo pipefail
+          echo "== codesign =="
+          codesign --display --verbose=2 build/Payload/iOSCleanerInspector.app
+          echo "== entitlements actually granted by the signature =="
+          codesign --display --entitlements :- --xml build/Payload/iOSCleanerInspector.app
+          echo "== entitlements embedded in __TEXT (independent re-read) =="
+          python3 tools/decompile/extract_entitlements.py \
+            build/Payload/iOSCleanerInspector.app/iOSCleanerInspector
 
       - name: Inspect artifact
         run: |

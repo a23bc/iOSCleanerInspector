@@ -1,5 +1,12 @@
 build/
+.trash/
 .DS_Store
 xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Local analysis tooling: venv and downloaded artifacts must never be committed.
+tools/venv/
+tools/artifacts/
+tools/*.tipa
+__pycache__/
