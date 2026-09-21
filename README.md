@@ -103,8 +103,10 @@ iOS 上 `/var` 是指向 `/private/var` 的符号链接，`/tmp` 指向 `/privat
 | 全量（原样相加） | 24.88 GB |
 | 全量（去重后，真实） | **23.91 GB** |
 
-iOSCleanerPro 的 `tempFilePaths` 同样同时含 `/tmp` 和 `/var/tmp`，**它大概率也在重复计这一份**。
-0.2.2 起按 `dev:inode` 去重，遇到重复路径明确打印 `[DUPLICATE]`，不再悄悄加两次。
+~~iOSCleanerPro 的 `tempFilePaths` 同样同时含 `/tmp` 和 `/var/tmp`，它大概率也在重复计这一份。~~
+**这个预测错了，已证伪**：它报的「临时文件 990.71M」= `/tmp` 986.82 MiB + `Media/Downloads` 3.89 MiB，
+到小数点后两位都对得上 —— 说明它**只计了一份**，不存在重复计。顺带确认了它用的是二进制单位（MiB/GiB）。
+0.2.2 起按 `dev:inode` 去重，重复路径会显式打印 `[DUPLICATE]`。
 
 ### 2. `/var/mobile/Library/Preferences/Logs` 在这台机器上不存在
 
@@ -128,6 +130,33 @@ iOSCleanerPro 的 `tempFilePaths` 同样同时含 `/tmp` 和 `/var/tmp`，**它�
 
 **不要用它自带的一键清理按钮去验证**（它是真的删文件的：`removeItemAtPath:error:` 摆在那儿）。
 只读我们的数字和它显示的数字就够了。
+
+## 数字对比（第一轮，iOSCleanerPro 只有四个分类总大小）
+
+同一台机器、相近时间：
+
+| 分类 | iOSCleanerPro | 本工具 0.2.2 | 差 |
+| --- | --- | --- | --- |
+| 临时文件 | 990.71 M | `/tmp` 986.82 MiB + Downloads 3.89 MiB = **990.71 MiB** | **完全一致** |
+| 照片缓存 | 335.59 M | PhotoData/Caches + Thumbnails = 355.59 MiB | −20.00 MiB |
+| 系统缓存 | 2.24 G | `Library/Caches` = 1.50 GiB | +0.74 GiB |
+| 应用缓存 | 17.92 G | 168 个容器（Caches + tmp）= 21.11 GiB | −3.19 GiB |
+
+「临时文件」两项完全对上，是很硬的证据：**我们的遍历方式和它是一致的**
+（同一批文件、同样的字节数、同样的单位），所以上面的差异不是"算法不同"，而是**分桶边界不同**。
+
+剩下的差异有两个候选解释，0.2.3 的分类小计就是用来二选一的：
+
+- **假设 A**：它的「系统缓存」= `/var/mobile/Library/Caches` **+ Apple 自家 App 的容器**
+  （0.74 GiB 的量级正好对得上 2.24 − 1.50）；「应用缓存」因此只剩第三方容器。
+- **假设 B**：它的「应用缓存」**不算容器里的 `tmp`**，只算 `Library/Caches`。
+  剩下 2.45 GiB 的缺口正好是这个量级。
+
+照片那 20.00 MiB 的差更可能是两次扫描之间 PhotoData 的自然变动，也可能是它没算 `PhotoData/Caches`；
+小计出来后一次就能定。
+
+0.2.3 起报告末尾会打印这几个桶的**多种组合**（Caches 单独、含 tmp、Apple/第三方拆分），
+并且用二进制单位显示，直接跟它界面上的数字对。
 
 ---
 
@@ -300,6 +329,16 @@ tools/venv/Scripts/pip install macholib     # Windows
 ---
 
 ## 变更记录
+
+### 0.2.3
+
+- 报告末尾新增 **CATEGORY TOTALS**：按对方界面的四个分桶给出多种组合
+  （系统缓存：Caches / +Logs / +Apple 容器；应用缓存：仅 Caches / 含 tmp / Apple / 第三方），
+  并用二进制单位显示 —— 上一轮已确认对方界面用的是 MiB/GiB
+- 修正上一轮的预测：对方的「临时文件」与我们的 `/tmp` + Downloads **到小数点后两位一致**，
+  说明它并没有重复计 `/tmp`，猜测作废
+- `SystemScanner` / `AppScanner` 现在把结果留在属性里（`sizesByPath`、各项分类合计），
+  便于组合出别的分桶口径
 
 ### 0.2.2
 

@@ -57,6 +57,15 @@ static NSString *BundleIDForContainer(NSString *container) {
     NSString *root = @"/var/mobile/Containers/Data/Application";
     NSFileManager *fm = NSFileManager.defaultManager;
 
+    self.libraryCacheTotal = 0;
+    self.tmpTotal = 0;
+    self.appleLibraryCacheTotal = 0;
+    self.appleTmpTotal = 0;
+    self.thirdPartyLibraryCacheTotal = 0;
+    self.thirdPartyTmpTotal = 0;
+    self.containerCount = 0;
+    self.resolvedCount = 0;
+
     NSMutableString *out =
         [NSMutableString stringWithString:@"\nAPP CONTAINERS\n--------------\n\n"];
 
@@ -72,10 +81,6 @@ static NSString *BundleIDForContainer(NSString *container) {
         [out appendFormat:@"[NO ACCESS] %@\n    cause: contentsOfDirectoryAtPath returned nil\n", root];
         return out;
     }
-
-    NSUInteger appCount = 0;
-    NSUInteger namedCount = 0;
-    unsigned long long grandTotal = 0;
 
     for (NSString *uuid in [entries sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]) {
         @autoreleasepool {
@@ -94,11 +99,20 @@ static NSString *BundleIDForContainer(NSString *container) {
 
             if (cacheSize == 0 && tmpSize == 0) continue;
 
-            appCount++;
-            grandTotal += cacheSize + tmpSize;
-
             NSString *bundleID = BundleIDForContainer(container);
-            if (bundleID) namedCount++;
+            BOOL isApple = [bundleID hasPrefix:@"com.apple."];
+
+            self.containerCount += 1;
+            self.libraryCacheTotal += cacheSize;
+            self.tmpTotal += tmpSize;
+            if (isApple) {
+                self.appleLibraryCacheTotal += cacheSize;
+                self.appleTmpTotal += tmpSize;
+            } else {
+                self.thirdPartyLibraryCacheTotal += cacheSize;
+                self.thirdPartyTmpTotal += tmpSize;
+            }
+            if (bundleID) self.resolvedCount += 1;
 
             [out appendFormat:
                 @"\nContainer: %@\n"
@@ -115,7 +129,8 @@ static NSString *BundleIDForContainer(NSString *container) {
     }
 
     [out appendFormat:@"\nApps with cache/tmp data: %lu (bundle id resolved for %lu)\nTotal: %llu bytes\n",
-        (unsigned long)appCount, (unsigned long)namedCount, grandTotal];
+        (unsigned long)self.containerCount, (unsigned long)self.resolvedCount,
+        self.libraryCacheTotal + self.tmpTotal];
 
     return out;
 }

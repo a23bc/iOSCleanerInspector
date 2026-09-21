@@ -12,6 +12,10 @@ NSString *_Nullable AccessFailure(NSString *path);
 + (instancetype)shared;
 - (NSString *)fullReadOnlyReport;
 - (NSString *)humanSize:(unsigned long long)bytes;
+/* Binary units (KiB/MiB/GiB). iOSCleanerPro displays sizes this way - its
+   "990.71M" matched /tmp + Downloads in MiB to two decimals - so the category
+   summary below is printed in the same unit to make comparison direct. */
+- (NSString *)humanBinarySize:(unsigned long long)bytes;
 @end
 
 NS_ASSUME_NONNULL_END

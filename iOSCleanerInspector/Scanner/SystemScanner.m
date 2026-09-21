@@ -60,6 +60,7 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
     ];
 
     NSMutableString *out = [NSMutableString stringWithString:@"SYSTEM / GLOBAL PATHS\n----------------------\n\n"];
+    self.sizesByPath = [NSMutableDictionary dictionary];
 
     /* On iOS /var is a symlink to /private/var and /tmp is a symlink to
        /private/var/tmp, so "/tmp" and "/var/tmp" are the SAME directory.
@@ -97,6 +98,7 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
 
         NSUInteger files = 0, dirs = 0;
         unsigned long long size = SizeOfTree(path, &files, &dirs);
+        self.sizesByPath[path] = @(size);
         [out appendFormat:@"%@\n  size: %llu bytes\n  files: %lu\n  dirs: %lu\n\n",
             path, size, (unsigned long)files, (unsigned long)dirs];
     }
