@@ -8,9 +8,19 @@
 
 ---
 
-## 一句话状态
+## 当前状态（0.2.1）
 
-截至 0.2.0，**尚未在真机上验证**。已确认的事实和待验证的内容都写在下面，不再用"应该没问题"糊过去。
+| 环节 | 状态 | 依据 |
+| --- | --- | --- |
+| 解除沙箱 / 容器 unrestricted 访问 | 已验证通过 | 真机安装后权限生效 |
+| 全局路径 + app 容器扫描 | 已验证通过 | 真机上扫描结果正常出现 |
+| Export 按钮（把报告交给系统） | 待验证 | CI 构建通过，还没装机跑过 |
+| 在文本里全选 → 复制 | 已知会闪退 | 真机复现；原因未定位，见下方"已知问题" |
+
+## 版本号约定
+
+**小步走**：只有权限、架构这类断点式改动才动 minor（0.1 → 0.2），其余一律 patch（0.2.0 → 0.2.1）。
+本仓库每次改动都必须推远端 CI 才能拿到产物，版本号跳太快会让"哪个版本对应哪个现象"难以追溯。
 
 ---
 
@@ -36,7 +46,7 @@
 
 ## 扫描哪些位置
 
-命中"可读"的前提下，v0.2.0 探测：
+命中"可读"的前提下，0.2.x 探测：
 
 - `/tmp`
 - `/var/tmp`
@@ -80,7 +90,7 @@ Apple 的 *App Sandbox Temporary Exception Entitlements* 写得很清楚：
 
 - entitlements 按 **三份证据**重写：被审计 app 的签名导出值、TrollStore 上游 entitlements、Apple 官方文档
 - 所有目录型绝对路径例外补上尾部斜杠
-- 新增真ë实代码签名：`codesign -f -s - --entitlements ...`（**同时保留** `__TEXT` section，两条路都铺）
+- 新增真实代码签名：`codesign -f -s - --entitlements ...`（**同时保留** `__TEXT` section，两条路都铺）
 - 每个 key 为什么存在，都写在 `iOSCleanerInspector.entitlements` 的注释里
 
 ### "unrestricted accessible containers" 是哪个键
@@ -124,6 +134,34 @@ SYSTEM / GLOBAL PATHS ----------------------
 `NSFileManager` 会把 ENOENT 和 EACCES 都吞成同一个 `NO`，所以这里直接用 `stat()` / `opendir()` 拿 errno。
 
 另外，`unrestricted container access` 可以直接装完后在 TrollStore 的 App 详情页里看：显示 "Unrestricted" 就说明 `AppDataContainers` 被系统认了。
+
+---
+
+## 导出报告：Export 按钮
+
+屏幕上联排两个按钮：`Scan (READ ONLY)` 和 `Export…`。扫描完成后 `Export…` 才可用。
+
+点它会弹出系统的分享/保存面板（`UIActivityViewController`）。关键点是**递给它的是报告原文字符串，不是文件 URL**：
+
+```objc
+UIActivityViewController *activity =
+    [[UIActivityViewController alloc] initWithActivityItems:@[report]
+                                      applicationActivities:nil];
+```
+
+这样做的结果：
+
+- 我们**不预先写任何文件**，也不会把任何临时文件路径交出去
+- 因此**不会直接跳到文件 App 的目录里**去"真的保存"——只有在面板里自己点了目标（保存到"文件"、存到备忘录、发给别的 App 等），系统才在那个时刻生成文件
+- 面板里出现哪些选项由系统依据内容类型决定，不需要我们声明
+
+另外补了一处在 iPad 上的必要处理：`Info.plist` 里 `UIDeviceFamily` 包含 2（iPad），而 iPad 上以 popover 形式呈现分享面板**必须**指定 `popoverPresentationController.sourceView`，否则直接崩。iPhone 上这行无害。
+
+### 已知问题：全选 → 复制会闪退
+
+在文本区域里全选再点"复制"，0.2.1 会直接闪退。成因还没定位（没有崩溃日志，不猜）。Export 按钮是绕过它的办法。
+
+需要留意的是：如果崩溃跟粘贴板本身有关，那么分享面板里的那个 "Copy" 也可能同样崩——那就先选面板里的其他目标。真机上跑一遍把现象（以及能不能拿到崩溃日志）带回来，再决定下一步是继续绕还是正面修。
 
 ---
 
@@ -190,6 +228,15 @@ tools/venv/Scripts/pip install macholib     # Windows
 ---
 
 ## 变更记录
+
+### 0.2.1
+
+- 新增 `Export…` 按钮：把报告**原文字符串**交给系统分享面板（不预写文件、不传文件 URL，
+  因此不会直接跳进目录去保存，只有用户选中目标时系统才生成文件）
+- 补 iPad 上必需的 `popoverPresentationController.sourceView`（`UIDeviceFamily` 含 iPad，
+  不设的话 popover 形式呈现会崩）
+- 导出用扫描器产出的原文而非 `UITextView` 的文本，避免被排版层影响
+- 版本号改为小步走：权限/架构类断点改动才动 minor，其余 patch
 
 ### 0.2.0
 

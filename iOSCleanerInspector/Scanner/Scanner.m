@@ -53,7 +53,7 @@ NSString *_Nullable AccessFailure(NSString *path) {
 
 - (NSString *)fullReadOnlyReport {
     NSMutableString *out = [NSMutableString string];
-    [out appendString:@"iOS Cleaner Inspector 0.2.0\n"];
+    [out appendString:@"iOS Cleaner Inspector 0.2.1\n"];
     [out appendString:@"READ-ONLY MODE - NO FILE DELETION\n"];
     [out appendFormat:@"running as uid=%d euid=%d gid=%d egid=%d\n",
         (int)getuid(), (int)geteuid(), (int)getgid(), (int)getegid()];
