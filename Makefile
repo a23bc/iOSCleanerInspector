@@ -45,8 +45,11 @@ sign: all
 	$(CODESIGN) --entitlements "$(ENTITLEMENTS)" "$(APP_DIR)"
 
 verify: sign
-	@codesign --display --verbose=2 --entitlements :- "$(APP_DIR)"
 	@codesign --verify --verbose=2 "$(APP_DIR)"
+	@codesign --display --verbose=2 "$(APP_DIR)"
+# NOT "codesign --entitlements :-" : that form is deprecated.
+	@codesign --display --entitlements "$(BUILD_DIR)/granted.plist" --xml "$(APP_DIR)"
+	@/usr/libexec/PlistBuddy -c "Print" "$(BUILD_DIR)/granted.plist"
 
 package: verify
 	@mkdir -p "$(TRASH_DIR)"
