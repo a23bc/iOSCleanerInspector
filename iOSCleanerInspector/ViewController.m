@@ -1,4 +1,4 @@
-#import <UIKit/UIKit.h>
+#import "ViewController.h"
 #import "Scanner/Scanner.h"
 
 @interface ViewController ()
