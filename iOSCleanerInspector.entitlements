@@ -3,8 +3,34 @@
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Intentionally minimal in v0.1.
-         Private/TrollStore-specific entitlements are NOT copied blindly.
-         Access failures are reported by the app and can be evaluated on-device. -->
+    <key>platform-application</key>
+    <true/>
+    <key>com.apple.private.security.no-container</key>
+    <true/>
+    <key>com.apple.private.security.sandbox</key>
+    <false/>
+    <key>com.apple.private.security.storage.AppDataContainers</key>
+    <true/>
+    <key>com.apple.private.security.storage.MobileDocuments</key>
+    <true/>
+    <key>com.apple.private.MobileContainerManager.allowed</key>
+    <true/>
+    <key>com.apple.private.coreservices.canmaplsdatabase</key>
+    <true/>
+    <key>com.apple.security.exception.files.absolute-path.read-write</key>
+    <array>
+        <string>/</string>
+        <string>/var</string>
+        <string>/var/mobile</string>
+        <string>/var/mobile/Library</string>
+        <string>/var/mobile/Library/Caches</string>
+        <string>/var/mobile/Library/Logs</string>
+        <string>/var/mobile/Media</string>
+        <string>/var/mobile/Containers</string>
+        <string>/var/mobile/Containers/Data</string>
+        <string>/var/mobile/Containers/Data/Application</string>
+        <string>/tmp</string>
+        <string>/var/tmp</string>
+    </array>
 </dict>
 </plist>

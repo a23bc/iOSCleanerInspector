@@ -19,11 +19,15 @@ The first version probes these locations when accessible:
 
 For App containers it reports each application's container UUID and, where readable, cache-like directories.
 
-## Important security design
+## Entitlements and security design
 
-The original cleaner being audited uses unusually broad private entitlements. This project does **not** copy every entitlement merely because the original has it.
+The first build deliberately used a minimal entitlement set. On-device testing showed that this was insufficient: the global paths and `/var/mobile/Containers/Data/Application` were reported as inaccessible.
 
-The app is structured so that the scanner reports access failures. Start with the smallest entitlement set that works on the target iOS/TrollStore environment and only expand it when a measured access failure justifies it.
+The next build therefore restores the same broad filesystem/container entitlement class observed in the original cleaner being audited, including platform application, disabled sandbox/container restrictions, AppDataContainers access, MobileContainerManager access, LS database mapping, and absolute-path filesystem exceptions.
+
+These privileges are intentionally paired with a **read-only implementation**: the inspector contains no file deletion, move, rename, or write-to-scanned-path operation. Broad access is used so the audit tool can observe the same filesystem surface as the original cleaner without performing its destructive operations.
+
+The entitlement set does not itself make the application destructive; the code path determines what operations the app performs. The project will continue to report inaccessible paths rather than silently substituting narrower data.
 
 No network framework is linked. No background audio mode is used. No IOKit access is requested.
 
