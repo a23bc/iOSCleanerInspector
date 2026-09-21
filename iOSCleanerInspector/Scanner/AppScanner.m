@@ -42,6 +42,17 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
     return total;
 }
 
+/* Every app data container carries its bundle id in a metadata plist written by
+   MobileContainerManager. Reading it is what turns a wall of anonymous UUIDs
+   into an auditable list - and it needs no API beyond Foundation. */
+static NSString *BundleIDForContainer(NSString *container) {
+    NSString *metadataPath =
+        [container stringByAppendingPathComponent:@".com.apple.mobile_container_manager.metadata.plist"];
+    NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:metadataPath];
+    NSString *identifier = metadata[@"MCMMetadataIdentifier"];
+    return [identifier isKindOfClass:NSString.class] && identifier.length ? identifier : nil;
+}
+
 - (NSString *)scanReport {
     NSString *root = @"/var/mobile/Containers/Data/Application";
     NSFileManager *fm = NSFileManager.defaultManager;
@@ -63,6 +74,7 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
     }
 
     NSUInteger appCount = 0;
+    NSUInteger namedCount = 0;
     unsigned long long grandTotal = 0;
 
     for (NSString *uuid in [entries sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]) {
@@ -85,20 +97,25 @@ static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NS
             appCount++;
             grandTotal += cacheSize + tmpSize;
 
+            NSString *bundleID = BundleIDForContainer(container);
+            if (bundleID) namedCount++;
+
             [out appendFormat:
                 @"\nContainer: %@\n"
+                 "  app:            %@\n"
                  "  Library/Caches: %llu bytes (%lu files)\n"
                  "  tmp:            %llu bytes (%lu files)\n"
                  "  total:          %llu bytes\n",
                  uuid,
+                 bundleID ?: @"(unknown - metadata plist unreadable)",
                  cacheSize, (unsigned long)files,
                  tmpSize, (unsigned long)tmpFiles,
                  cacheSize + tmpSize];
         }
     }
 
-    [out appendFormat:@"\nApps with cache/tmp data: %lu\nTotal: %llu bytes\n",
-        (unsigned long)appCount, grandTotal];
+    [out appendFormat:@"\nApps with cache/tmp data: %lu (bundle id resolved for %lu)\nTotal: %llu bytes\n",
+        (unsigned long)appCount, (unsigned long)namedCount, grandTotal];
 
     return out;
 }

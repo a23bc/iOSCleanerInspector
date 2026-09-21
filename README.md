@@ -36,9 +36,19 @@
 | UIBackgroundModes | `audio` |
 | 权限用途说明 | 仅"需要访问媒体库/照片库来清理缓存"两句中式文案 |
 | 链接的私有框架 | 无 |
+| 自己的类 | `AppDelegate`、`RootViewController`、`CacheManager`、`CleanTaskManager` |
+| `CacheManager` 的方法 | `setupCachePaths` / `scanCacheSize` / `calculateSystemCacheSize` / `calculateTempFilesSize` / `calculateAppCacheSize` / `calculatePhotosCacheSize` / `calculateSizeOfFolder:` / `cleanDirectoryAtPath:` / `removeItemAtPath:error:` |
+| `RootViewController` 的按钮 | 系统缓存 / App 缓存 / 临时文件 / 照片缓存 / 全部（5 个 clean 按钮） |
 | 二进制内硬编码路径 | `/var/mobile/Containers/Data/Application/Calculator/Library/Caches`、`.../Mail/...`、`.../Notes/...`、`.../Safari/...`、`.../Weather/...` |
 
-最后一行值得单独说：iOS 上 app 容器的真实路径是 **UUID 目录**（`/var/mobile/Containers/Data/Application/<UUID>/Library/Caches`），并不存在 `.../Application/Calculator/...` 这种英文名路径。这些字符串吃起来更像是写死的展示项，而不是真实枚举结果。这也是本项目存在的理由：先确认"看得到什么"，再谈"清理了什么"。
+**更正一处自己的判断。** 我上一轮看到那 5 条硬编码路径（`/Application/Calculator/...` 这种 iOS 上并不存在的英文名路径），
+结合 bundle id 是 `com.example.tweak`，判断它是"写死的展示项"。**这个结论证据不足，已收回。**
+把 `__objc_classname` / `__objc_methname` 完整提取后能看到：它有 `contentsOfDirectoryAtPath:error:`、
+`attributesOfItemAtPath:error:`、`calculateSizeOfFolder:`、`removeItemAtPath:error:`，还有
+`dictionaryWithContentsOfFile:`（用来读容器里的 `.com.apple.mobile_container_manager.metadata.plist`，
+即由 UUID 反查 bundle id 的标准做法）。也就是说**它确实在枚举、确实在删**，不是摆设。
+
+那 5 条硬编码路径更像是 `setupCachePaths` 里的默认值/兜底值。真值如何，靠下面这个对照实验来定。
 
 它的 entitlements 全集已被完整导出，见下节。
 
@@ -52,10 +62,72 @@
 - `/var/tmp`
 - `/var/mobile/Library/Caches`
 - `/var/mobile/Library/Logs`
-- `/var/mobile/Library/Preferences/Logs`
+- `/var/mobile/Library/Preferences/Logs`（**iOS 上已不存在**，见下）
+- `/var/mobile/Media/Downloads`
 - `/var/mobile/Media/PhotoData/Caches`
 - `/var/mobile/Media/PhotoData/Thumbnails`
-- `/var/mobile/Containers/Data/Application`（逐个容器报 UUID，以及 `Library/Caches`、`tmp` 的体积和文件数）
+- `/var/mobile/Containers/Data/Application`（逐个容器：bundle id + `Library/Caches` + `tmp`）
+
+## 与 iOSCleanerPro 的扫描范围对照
+
+| 位置 | iOSCleanerPro | 本工具 | 说明 |
+| --- | --- | --- | --- |
+| `/tmp` + `/var/tmp` | 有（`tempFilePaths`） | 有 | **两者是同一个目录**，见下一节 |
+| `/var/mobile/Library/Caches` | 有（`systemCachePaths`） | 有 | 一致 |
+| `/var/mobile/Library/Logs` | 有（在它申请的 entitlements 里） | 有 | 一致 |
+| `/var/mobile/Library/Preferences/Logs` | 有 | 有 | **真机上 ENOENT，两者都指向一个不存在的路径** |
+| `/var/mobile/Media/PhotoData/Caches`、`Thumbnails` | 有（`photoCachePaths`） | 有 | 一致 |
+| `/var/mobile/Media/Downloads` | 有 | 0.2.2 起有 | 之前漏了 |
+| `/var/mobile/Containers/Data/Application` | 有（`applicationsPath`） | 有 | 一致 |
+
+结论：**扫描范围基本是同一套**，差别只有 Downloads（我们原先漏了）和每个容器是否连 `tmp` 一起算。
+所以两边数字可以直接对比 —— 见下面的对照实验。
+
+## 0.2.1 真机报告里抓到的三个东西
+
+### 1. `/tmp` 和 `/var/tmp` 是同一个目录 —— 0.2.1 虚报了 986.82 MB
+
+iOS 上 `/var` 是指向 `/private/var` 的符号链接，`/tmp` 指向 `/private/var/tmp`。
+所以 `/tmp` 与 `/var/tmp` 落在同一个 inode 上。0.2.1 把这两个路径各遍历了一次，报出来的数字**一模一样**
+（都是 1,034,757,742 bytes / 1461 files / 2019 dirs）—— 两棵不同的目录树不可能字节数和文件数全部相等，
+这个"相等"本身就是它们是同一份数据的证据。
+
+按该次报告的数据：
+
+| 口径 | 数值 |
+| --- | --- |
+| 全局路径（0.2.1 原样相加） | 3.79 GB |
+| 其中重复计的一次 tmp | **986.82 MB** |
+| 全局路径（去重后） | 2.83 GB |
+| App 容器（168 个） | 21.08 GB |
+| 全量（原样相加） | 24.88 GB |
+| 全量（去重后，真实） | **23.91 GB** |
+
+iOSCleanerPro 的 `tempFilePaths` 同样同时含 `/tmp` 和 `/var/tmp`，**它大概率也在重复计这一份**。
+0.2.2 起按 `dev:inode` 去重，遇到重复路径明确打印 `[DUPLICATE]`，不再悄悄加两次。
+
+### 2. `/var/mobile/Library/Preferences/Logs` 在这台机器上不存在
+
+真机 `stat()` 返回 `errno=2 (No such file or directory)`。这是很老的越狱插件时代的路径，
+现代 iOS 上没有它。iOSCleanerPro 也把它列在扫描路径里 —— 一个声称"能清理"的位置，
+目标本身并不存在。
+
+### 3. 容器扫描里有一批"只有 tmp、没有 cache"的容器
+
+0.2.1 的输出里能看到 `Library/Caches: 0 bytes (0 files)` 但 `tmp` 有几十 MB 的容器
+（例如 28671629 的 tmp 有 424 MB / 12488 files）。只统计 `Library/Caches` 的工具会完全看不到这部分。
+
+## 对照实验（判定 iOSCleanerPro 到底扫了多少 App）
+
+两边扫描范围一致、两边都能真机跑，所以可以直接比：
+
+1. 用本工具扫一遍，记下「App 容器总数」和「容器合计」（去重后）。
+2. 打开 iOSCleanerPro，看它的 App 缓存分类显示多少。
+3. 对得上（都是 21 GB 量级 / 168 个左右）→ 它确实全量枚举；
+   只显示计算器、邮件、备忘录、Safari、天气 5 项 → 那 5 条硬编码路径就是它的全部范围。
+
+**不要用它自带的一键清理按钮去验证**（它是真的删文件的：`removeItemAtPath:error:` 摆在那儿）。
+只读我们的数字和它显示的数字就够了。
 
 ---
 
@@ -228,6 +300,15 @@ tools/venv/Scripts/pip install macholib     # Windows
 ---
 
 ## 变更记录
+
+### 0.2.2
+
+- 修掉重复统计：`/tmp` 与 `/var/tmp` 在 iOS 上是同一个目录（`/var` → `/private/var`），
+  0.2.1 各遍历一次，虚报 986.82 MB。现在按 `dev:inode` 去重，并对重复路径显式打印 `[DUPLICATE]`
+- 容器扫描补上 bundle id（读容器里的 `.com.apple.mobile_container_manager.metadata.plist` 的
+  `MCMMetadataIdentifier`），168 个匿名 UUID 变成可核对的 App 列表
+- 补上 `/var/mobile/Media/Downloads`（与 iOSCleanerPro 对齐，0.2.1 漏了）
+- 更正对 iOSCleanerPro 的判断：它有真实枚举与删除实现，上一轮"写死展示项"的说法证据不足，已收回
 
 ### 0.2.1
 

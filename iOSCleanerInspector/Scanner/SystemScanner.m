@@ -1,6 +1,8 @@
 #import "SystemScanner.h"
 #import "Scanner.h"
 
+#include <sys/stat.h>
+
 @implementation SystemScanner
 
 + (instancetype)shared {
@@ -52,11 +54,18 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
         @"/var/mobile/Library/Caches",
         @"/var/mobile/Library/Logs",
         @"/var/mobile/Library/Preferences/Logs",
+        @"/var/mobile/Media/Downloads",
         @"/var/mobile/Media/PhotoData/Caches",
         @"/var/mobile/Media/PhotoData/Thumbnails"
     ];
 
     NSMutableString *out = [NSMutableString stringWithString:@"SYSTEM / GLOBAL PATHS\n----------------------\n\n"];
+
+    /* On iOS /var is a symlink to /private/var and /tmp is a symlink to
+       /private/var/tmp, so "/tmp" and "/var/tmp" are the SAME directory.
+       Walking both silently inflates the total - exactly the kind of thing
+       this tool exists to catch. Track dev:inode and count each object once. */
+    NSMutableDictionary<NSString *, NSString *> *counted = [NSMutableDictionary dictionary];
 
     for (NSString *path in paths) {
         NSString *failure = AccessFailure(path);
@@ -64,6 +73,27 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
             [out appendFormat:@"[NO ACCESS] %@\n    cause: %@\n\n", path, failure];
             continue;
         }
+
+        struct stat st;
+        if (stat(path.fileSystemRepresentation, &st) != 0) { /* AccessFailure already passed */ continue; }
+        NSString *identity =
+            [NSString stringWithFormat:@"%llu:%llu",
+                (unsigned long long)st.st_dev, (unsigned long long)st.st_ino];
+
+        NSString *alreadyCountedAs = counted[identity];
+        if (alreadyCountedAs) {
+            NSString *link = [NSFileManager.defaultManager destinationOfSymbolicLinkAtPath:path error:nil];
+            [out appendFormat:
+                @"[DUPLICATE] %@%@\n"
+                 "    same filesystem object as %@\n"
+                 "    dev:inode %@ - counted once, NOT added again\n\n",
+                path,
+                link ? [@"  -> " stringByAppendingString:link] : @"",
+                alreadyCountedAs,
+                identity];
+            continue;
+        }
+        counted[identity] = path;
 
         NSUInteger files = 0, dirs = 0;
         unsigned long long size = SizeOfTree(path, &files, &dirs);
