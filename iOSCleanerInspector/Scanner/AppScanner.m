@@ -1,0 +1,99 @@
+#import "AppScanner.h"
+
+@implementation AppScanner
+
++ (instancetype)shared {
+    static AppScanner *s;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ s = [AppScanner new]; });
+    return s;
+}
+
+static unsigned long long SizeOfTreeAtPath(NSString *path, NSUInteger *files, NSUInteger *dirs) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    BOOL isDir = NO;
+    if (![fm fileExistsAtPath:path isDirectory:&isDir]) return 0;
+
+    if (!isDir) {
+        NSDictionary *a = [fm attributesOfItemAtPath:path error:nil];
+        return [a[NSFileSize] unsignedLongLongValue];
+    }
+
+    if (dirs) (*dirs)++;
+    unsigned long long total = 0;
+
+    NSDirectoryEnumerator *e = [fm enumeratorAtPath:path];
+    for (NSString *rel in e) {
+        @autoreleasepool {
+            NSString *full = [path stringByAppendingPathComponent:rel];
+            BOOL childDir = NO;
+            if (![fm fileExistsAtPath:full isDirectory:&childDir]) continue;
+
+            if (childDir) {
+                if (dirs) (*dirs)++;
+            } else {
+                if (files) (*files)++;
+                NSDictionary *a = [fm attributesOfItemAtPath:full error:nil];
+                total += [a[NSFileSize] unsignedLongLongValue];
+            }
+        }
+    }
+    return total;
+}
+
+- (NSString *)scanReport {
+    NSString *root = @"/var/mobile/Containers/Data/Application";
+    NSFileManager *fm = NSFileManager.defaultManager;
+
+    NSMutableString *out =
+        [NSMutableString stringWithString:@"\\nAPP CONTAINERS\\n--------------\\n"];
+
+    NSArray *entries = [fm contentsOfDirectoryAtPath:root error:nil];
+
+    if (!entries) {
+        [out appendFormat:@"[NO ACCESS] %@\\n", root];
+        return out;
+    }
+
+    NSUInteger appCount = 0;
+    unsigned long long grandTotal = 0;
+
+    for (NSString *uuid in [entries sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]) {
+        @autoreleasepool {
+            NSString *container = [root stringByAppendingPathComponent:uuid];
+            BOOL isDir = NO;
+            if (![fm fileExistsAtPath:container isDirectory:&isDir] || !isDir) continue;
+
+            NSString *libraryCaches = [container stringByAppendingPathComponent:@"Library/Caches"];
+            NSString *tmp = [container stringByAppendingPathComponent:@"tmp"];
+
+            NSUInteger files = 0, dirs = 0;
+            unsigned long long cacheSize = SizeOfTreeAtPath(libraryCaches, &files, &dirs);
+
+            NSUInteger tmpFiles = 0, tmpDirs = 0;
+            unsigned long long tmpSize = SizeOfTreeAtPath(tmp, &tmpFiles, &tmpDirs);
+
+            if (cacheSize == 0 && tmpSize == 0) continue;
+
+            appCount++;
+            grandTotal += cacheSize + tmpSize;
+
+            [out appendFormat:
+                @"\\nContainer: %@\\n"
+                 "  Library/Caches: %llu bytes (%lu files)\\n"
+                 "  tmp:            %llu bytes (%lu files)\\n"
+                 "  total:          %llu bytes\\n",
+                 uuid,
+                 cacheSize, (unsigned long)files,
+                 tmpSize, (unsigned long)tmpFiles,
+                 cacheSize + tmpSize];
+        }
+    }
+
+    [out appendFormat:@"\\nApps with cache/tmp data: %lu\\nTotal: %llu bytes\\n",
+        (unsigned long)appCount, grandTotal];
+
+    return out;
+}
+
+@end

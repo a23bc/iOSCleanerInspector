@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Intentionally minimal in v0.1.
+         Private/TrollStore-specific entitlements are NOT copied blindly.
+         Access failures are reported by the app and can be evaluated on-device. -->
+</dict>
+</plist>

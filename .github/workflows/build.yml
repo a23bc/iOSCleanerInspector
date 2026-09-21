@@ -1,0 +1,40 @@
+name: Build iOSCleanerInspector
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          clang --version
+
+      - name: Build TIPA
+        run: |
+          chmod +x /usr/bin/true
+          make package
+
+      - name: Inspect artifact
+        run: |
+          unzip -l build/iOSCleanerInspector.tipa
+          file build/Payload/iOSCleanerInspector.app/iOSCleanerInspector
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
+            build/Payload/iOSCleanerInspector.app/Info.plist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOSCleanerInspector-${{ github.sha }}
+          path: |
+            build/iOSCleanerInspector.tipa
+            build/Payload/iOSCleanerInspector.app
