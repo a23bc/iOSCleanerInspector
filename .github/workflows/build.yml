@@ -29,7 +29,10 @@ jobs:
           echo "== codesign =="
           codesign --display --verbose=2 build/Payload/iOSCleanerInspector.app
           echo "== entitlements actually granted by the signature =="
-          codesign --display --entitlements :- --xml build/Payload/iOSCleanerInspector.app
+          # NOT "codesign --entitlements :-" : that form is deprecated.
+          codesign --display --entitlements "$RUNNER_TEMP/granted.plist" --xml \
+            build/Payload/iOSCleanerInspector.app
+          cat "$RUNNER_TEMP/granted.plist"
           echo "== entitlements embedded in __TEXT (independent re-read) =="
           python3 tools/decompile/extract_entitlements.py \
             build/Payload/iOSCleanerInspector.app/iOSCleanerInspector
