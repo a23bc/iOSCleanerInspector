@@ -71,100 +71,42 @@ NSString *_Nullable AccessFailure(NSString *path) {
     return [f stringFromDate:[NSDate date]];
 }
 
-static unsigned long long SumOf(NSArray<NSString *> *paths,
-                                NSDictionary<NSString *, NSNumber *> *sizes) {
-    unsigned long long total = 0;
-    for (NSString *p in paths) total += [sizes[p] unsignedLongLongValue];
-    return total;
-}
-
 - (NSString *)fullReadOnlyReport {
     NSMutableString *out = [NSMutableString string];
-    [out appendString:@"iOS Cleaner Inspector 0.2.5\n"];
-    [out appendString:@"READ-ONLY MODE - NO FILE DELETION\n"];
+    [out appendString:@"iOS Cleaner Inspector 0.3.0\n"];
+    [out appendString:@"AUDIT MODE - READ ONLY, NO FILE DELETION\n"];
+    [out appendString:@"目标: 审计被审计清理工具\"会删除\"的目录里到底装了什么\n"];
     [out appendFormat:@"running as uid=%d euid=%d gid=%d egid=%d\n",
         (int)getuid(), (int)geteuid(), (int)getgid(), (int)getegid()];
     [out appendFormat:@"scan started:  %@\n", [Scanner timestampNow]];
     [out appendString:@"================================\n\n"];
 
-    SystemScanner *system = [SystemScanner shared];
-    AppScanner *apps = [AppScanner shared];
-
-    [out appendString:[system scanReport]];
+    [out appendString:[[SystemScanner shared] scanReport]];
     [out appendString:@"\n"];
-    [out appendString:[apps scanReport]];
+    [out appendString:[[AppScanner shared] scanReport]];
 
-    /* Buckets mirroring how the audited cleaner groups its numbers, so the two
-       reports can be compared line by line instead of guessing which paths
-       landed in which bucket. */
-    NSDictionary<NSString *, NSNumber *> *sizes = system.sizesByPath;
-    unsigned long long systemCaches = SumOf(@[@"/var/mobile/Library/Caches"], sizes);
-    unsigned long long systemLogs = SumOf(@[@"/var/mobile/Library/Logs"], sizes);
-    unsigned long long tempFiles = SumOf(@[@"/tmp", @"/var/mobile/Media/Downloads"], sizes);
-    unsigned long long photos =
-        SumOf(@[@"/var/mobile/Media/PhotoData/Caches", @"/var/mobile/Media/PhotoData/Thumbnails"], sizes);
-    unsigned long long appCachesOnly = apps.libraryCacheTotal;
-    unsigned long long appTmpOnly = apps.tmpTotal;
-    unsigned long long appleTotal = apps.appleLibraryCacheTotal + apps.appleTmpTotal;
-    unsigned long long thirdPartyTotal = apps.thirdPartyLibraryCacheTotal + apps.thirdPartyTmpTotal;
-
-    /* Paths we only started scanning in 0.2.4, kept out of the buckets above
-       so the earlier comparisons stay comparable. */
-    NSArray<NSString *> *otherContainers = @[
-        @"/var/mobile/Containers/Shared/AppGroup",
-        @"/var/mobile/Containers/Data/TempDir",
-        @"/var/mobile/Containers/Data/InternalDaemon",
-        @"/var/mobile/Containers/Data/PluginKitPlugin",
-        @"/var/containers/Data"
-    ];
-    unsigned long long sharedTotal = SumOf(otherContainers, sizes);
-
+    /* Transparency: what this build refuses to look at, and why. */
     [out appendString:@"\n================================\n"];
-    [out appendString:@"CATEGORY TOTALS (binary units, to compare with iOSCleanerPro)\n"];
-    [out appendString:@"------------------------------------------------------------\n\n"];
+    [out appendString:@"NOT SCANNED (安全评审判定为不可删除, 本工具不枚举)\n"];
+    [out appendString:@"------------------------------------------------\n"];
+    for (NSString *line in @[
+        @"/var/mobile/Library/Logs                      日志, 禁止删除",
+        @"/var/mobile/Library/Preferences/Logs           (该路径在 iOS 上不存在)",
+        @"/var/mobile/Media/Downloads                   用户下载内容, 禁止删除",
+        @"/var/mobile/Media/PhotoData/Caches            Photos 数据, 禁止删除",
+        @"/var/mobile/Media/PhotoData/Thumbnails        Photos 缩略图, 禁止删除",
+        @"/var/mobile/Containers/Data/InternalDaemon    系统 daemon 数据, 禁止删除",
+        @"/var/mobile/Containers/Data/PluginKitPlugin   插件容器, 同上按不可删除处理",
+        @"/var/mobile/Containers/Shared/AppGroup        共享容器, 同上按不可删除处理",
+        @"/var/containers/Data                          系统容器数据, 禁止删除"]) {
+        [out appendFormat:@"  %@\n", line];
+    }
 
-    [out appendFormat:@"系统缓存 system\n"
-                       "  Library/Caches                        %20llu  %@\n"
-                       "  Library/Caches + Library/Logs         %20llu  %@\n"
-                       "  Library/Caches + com.apple.* 容器      %20llu  %@\n"
-                       "  + 共享/系统容器 (0.2.4 新增)           %20llu  %@\n"
-                       "  = 上面四项合计                        %20llu  %@\n\n",
-        systemCaches, [self humanBinarySize:systemCaches],
-        systemCaches + systemLogs, [self humanBinarySize:systemCaches + systemLogs],
-        systemCaches + appleTotal, [self humanBinarySize:systemCaches + appleTotal],
-        sharedTotal, [self humanBinarySize:sharedTotal],
-        systemCaches + systemLogs + appleTotal + sharedTotal,
-        [self humanBinarySize:systemCaches + systemLogs + appleTotal + sharedTotal]];
-
-    [out appendFormat:@"  明细: Shared/AppGroup 等 5 个路径见上方 SYSTEM / GLOBAL PATHS\n\n"];
-
-    [out appendFormat:@"临时文件 temp\n"
-                       "  /tmp + Media/Downloads                %20llu  %@\n\n",
-        tempFiles, [self humanBinarySize:tempFiles]];
-
-    [out appendFormat:@"照片缓存 photos\n"
-                       "  PhotoData/Caches + Thumbnails         %20llu  %@\n\n",
-        photos, [self humanBinarySize:photos]];
-
-    [out appendFormat:@"应用缓存 apps (%lu containers)\n"
-                       "  Library/Caches only                   %20llu  %@\n"
-                       "  tmp only                              %20llu  %@\n"
-                       "  Library/Caches + tmp                  %20llu  %@\n"
-                       "  第三方 apps: Library/Caches            %20llu  %@\n"
-                       "  第三方 apps: +tmp                      %20llu  %@\n"
-                       "  com.apple.* apps (含 tmp)              %20llu  %@\n\n",
+    AppScanner *apps = [AppScanner shared];
+    [out appendFormat:@"\n审计对象合计: %lu 个 App 容器, Library/Caches %@ + tmp %@\n",
         (unsigned long)apps.containerCount,
-        appCachesOnly, [self humanBinarySize:appCachesOnly],
-        appTmpOnly, [self humanBinarySize:appTmpOnly],
-        appCachesOnly + appTmpOnly, [self humanBinarySize:appCachesOnly + appTmpOnly],
-        apps.thirdPartyLibraryCacheTotal, [self humanBinarySize:apps.thirdPartyLibraryCacheTotal],
-        thirdPartyTotal, [self humanBinarySize:thirdPartyTotal],
-        appleTotal, [self humanBinarySize:appleTotal]];
-
-    [out appendFormat:@"整体合计 (去重后, 含容器 tmp)          %20llu  %@\n",
-        systemCaches + systemLogs + tempFiles + photos + sharedTotal + appCachesOnly + appTmpOnly,
-        [self humanBinarySize:systemCaches + systemLogs + tempFiles + photos + sharedTotal
-                              + appCachesOnly + appTmpOnly]];
+        [self humanBinarySize:apps.libraryCacheTotal],
+        [self humanBinarySize:apps.tmpTotal]];
 
     [out appendString:@"\n================================\n"];
     [out appendFormat:@"scan finished: %@\n", [Scanner timestampNow]];

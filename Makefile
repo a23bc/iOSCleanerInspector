@@ -19,6 +19,7 @@ SOURCES := \
 	iOSCleanerInspector/AppDelegate.m \
 	iOSCleanerInspector/ViewController.m \
 	iOSCleanerInspector/Scanner/Scanner.m \
+	iOSCleanerInspector/Scanner/Auditor.m \
 	iOSCleanerInspector/Scanner/AppScanner.m \
 	iOSCleanerInspector/Scanner/SystemScanner.m
 

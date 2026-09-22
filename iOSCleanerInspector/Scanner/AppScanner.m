@@ -1,5 +1,6 @@
 #import "AppScanner.h"
 #import "Scanner.h"
+#import "Auditor.h"
 
 @implementation AppScanner
 
@@ -82,6 +83,9 @@ static NSString *BundleIDForContainer(NSString *container) {
         return out;
     }
 
+    NSMutableArray<NSString *> *cachePaths = [NSMutableArray array];
+    NSMutableArray<NSString *> *tmpPaths = [NSMutableArray array];
+
     for (NSString *uuid in [entries sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)]) {
         @autoreleasepool {
             NSString *container = [root stringByAppendingPathComponent:uuid];
@@ -113,6 +117,8 @@ static NSString *BundleIDForContainer(NSString *container) {
                 self.thirdPartyTmpTotal += tmpSize;
             }
             if (bundleID) self.resolvedCount += 1;
+            if (cacheSize) [cachePaths addObject:libraryCaches];
+            if (tmpSize) [tmpPaths addObject:tmp];
 
             [out appendFormat:
                 @"\nContainer: %@\n"
@@ -131,6 +137,18 @@ static NSString *BundleIDForContainer(NSString *container) {
     [out appendFormat:@"\nApps with cache/tmp data: %lu (bundle id resolved for %lu)\nTotal: %llu bytes\n",
         (unsigned long)self.containerCount, (unsigned long)self.resolvedCount,
         self.libraryCacheTotal + self.tmpTotal];
+
+    /* Per-app rows above are for totals; these two blocks answer the audit
+       question: what is actually inside the directories it wipes. */
+    Auditor *auditor = [Auditor shared];
+    [out appendString:@"\n"];
+    [out appendString:[auditor auditReportForPaths:cachePaths
+                                             title:@"所有 App 容器 Library/Caches 合计"
+                                           maxRows:15]];
+    [out appendString:@"\n"];
+    [out appendString:[auditor auditReportForPaths:tmpPaths
+                                             title:@"所有 App 容器 tmp 合计 (清理工具应跳过正在使用的文件)"
+                                           maxRows:10]];
 
     return out;
 }
