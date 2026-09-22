@@ -56,7 +56,14 @@ static unsigned long long SizeOfTree(NSString *path, NSUInteger *files, NSUInteg
         @"/var/mobile/Library/Preferences/Logs",
         @"/var/mobile/Media/Downloads",
         @"/var/mobile/Media/PhotoData/Caches",
-        @"/var/mobile/Media/PhotoData/Thumbnails"
+        @"/var/mobile/Media/PhotoData/Thumbnails",
+        // Not scanned before 0.2.4: candidates for the 0.72 GiB that
+        // iOSCleanerPro's "system" bucket shows on top of Library/Caches.
+        @"/var/mobile/Containers/Shared/AppGroup",
+        @"/var/mobile/Containers/Data/TempDir",
+        @"/var/mobile/Containers/Data/InternalDaemon",
+        @"/var/mobile/Containers/Data/PluginKitPlugin",
+        @"/var/containers/Data"
     ];
 
     NSMutableString *out = [NSMutableString stringWithString:@"SYSTEM / GLOBAL PATHS\n----------------------\n\n"];

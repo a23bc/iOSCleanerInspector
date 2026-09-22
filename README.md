@@ -67,6 +67,9 @@
 - `/var/mobile/Media/PhotoData/Caches`
 - `/var/mobile/Media/PhotoData/Thumbnails`
 - `/var/mobile/Containers/Data/Application`（逐个容器：bundle id + `Library/Caches` + `tmp`）
+- 0.2.4 起补扫（用来追系统缓存那 0.72 GiB 缺口，见下）：
+  `/var/mobile/Containers/Shared/AppGroup`、`Containers/Data/TempDir`、
+  `Containers/Data/InternalDaemon`、`Containers/Data/PluginKitPlugin`、`/var/containers/Data`
 
 ## 与 iOSCleanerPro 的扫描范围对照
 
@@ -154,10 +157,13 @@ iOS 上 `/var` 是指向 `/private/var` 的符号链接，`/tmp` 指向 `/privat
 - **照片缓存 ≈ 只算 `PhotoData/Thumbnails`**（335.19 vs 335.59 MiB，差 0.4 MiB 属扫描间隔的自然变动）。
   `PhotoData/Caches` 那 20.44 MiB 它没算进照片桶。
 
-**还剩「系统缓存」对不上 0.72 GiB**：它显示 2.24 G，我们最大口径也只有 2.06 GiB
+**只剩「系统缓存」对不上 0.72 GiB**：它显示 2.24 G，0.2.3 时我们最大口径只有 2.06 GiB
 （Caches 1.50 + Logs 0.02 + Apple 容器 0.56）。差的这部分大概率在我们没扫的位置上 ——
-候选是 `/var/mobile/Containers/Shared/`（App Group 共享容器）和 `/var/containers/` 下的系统容器，
-这两个我们都没扫。下一步可以加进去试试。
+候选是 `/var/mobile/Containers/Shared/`（App Group 共享容器）和 `/var/containers/` 下的系统容器。
+
+0.2.4 已经把这批路径加进去扫了，并在分类小计里单列一行「+ 共享/系统容器」以及上面四项的合计：
+**装一次看那行合计数到不到 2.24 G** —— 到得了，缺口就解释完了；到不了，
+说明差异不在扫描面上（那就是它的遍历算法或统计口径与我们有别，得换思路查）。
 
 0.2.3 起报告末尾会打印这几个桶的**多种组合**（Caches 单独、含 tmp、Apple/第三方拆分），
 并且用二进制单位显示，直接跟它界面上的数字对。
@@ -380,6 +386,13 @@ tools/venv/Scripts/pip install macholib     # Windows
 ---
 
 ## 变更记录
+
+### 0.2.4
+
+- 补扫 5 个此前没覆盖的容器路径（Shared/AppGroup、Data/TempDir、Data/InternalDaemon、
+  Data/PluginKitPlugin、`/var/containers/Data`），追「系统缓存」那 0.72 GiB 的缺口
+- 分类小计里单列「+ 共享/系统容器」一行和四项合计，直接对它的 2.24 G
+- 整体合计现在也把这批路径算进去
 
 ### 0.2.3
 

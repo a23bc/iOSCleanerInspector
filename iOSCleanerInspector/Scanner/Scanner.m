@@ -72,7 +72,7 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
 
 - (NSString *)fullReadOnlyReport {
     NSMutableString *out = [NSMutableString string];
-    [out appendString:@"iOS Cleaner Inspector 0.2.3\n"];
+    [out appendString:@"iOS Cleaner Inspector 0.2.4\n"];
     [out appendString:@"READ-ONLY MODE - NO FILE DELETION\n"];
     [out appendFormat:@"running as uid=%d euid=%d gid=%d egid=%d\n",
         (int)getuid(), (int)geteuid(), (int)getgid(), (int)getegid()];
@@ -99,6 +99,17 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
     unsigned long long appleTotal = apps.appleLibraryCacheTotal + apps.appleTmpTotal;
     unsigned long long thirdPartyTotal = apps.thirdPartyLibraryCacheTotal + apps.thirdPartyTmpTotal;
 
+    /* Paths we only started scanning in 0.2.4, kept out of the buckets above
+       so the earlier comparisons stay comparable. */
+    NSArray<NSString *> *otherContainers = @[
+        @"/var/mobile/Containers/Shared/AppGroup",
+        @"/var/mobile/Containers/Data/TempDir",
+        @"/var/mobile/Containers/Data/InternalDaemon",
+        @"/var/mobile/Containers/Data/PluginKitPlugin",
+        @"/var/containers/Data"
+    ];
+    unsigned long long sharedTotal = SumOf(otherContainers, sizes);
+
     [out appendString:@"\n================================\n"];
     [out appendString:@"CATEGORY TOTALS (binary units, to compare with iOSCleanerPro)\n"];
     [out appendString:@"------------------------------------------------------------\n\n"];
@@ -106,10 +117,17 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
     [out appendFormat:@"系统缓存 system\n"
                        "  Library/Caches                        %20llu  %@\n"
                        "  Library/Caches + Library/Logs         %20llu  %@\n"
-                       "  Library/Caches + com.apple.* 容器      %20llu  %@\n\n",
+                       "  Library/Caches + com.apple.* 容器      %20llu  %@\n"
+                       "  + 共享/系统容器 (0.2.4 新增)           %20llu  %@\n"
+                       "  = 上面四项合计                        %20llu  %@\n\n",
         systemCaches, [self humanBinarySize:systemCaches],
         systemCaches + systemLogs, [self humanBinarySize:systemCaches + systemLogs],
-        systemCaches + appleTotal, [self humanBinarySize:systemCaches + appleTotal]];
+        systemCaches + appleTotal, [self humanBinarySize:systemCaches + appleTotal],
+        sharedTotal, [self humanBinarySize:sharedTotal],
+        systemCaches + systemLogs + appleTotal + sharedTotal,
+        [self humanBinarySize:systemCaches + systemLogs + appleTotal + sharedTotal]];
+
+    [out appendFormat:@"  明细: Shared/AppGroup 等 5 个路径见上方 SYSTEM / GLOBAL PATHS\n\n"];
 
     [out appendFormat:@"临时文件 temp\n"
                        "  /tmp + Media/Downloads                %20llu  %@\n\n",
@@ -135,8 +153,9 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
         appleTotal, [self humanBinarySize:appleTotal]];
 
     [out appendFormat:@"整体合计 (去重后, 含容器 tmp)          %20llu  %@\n",
-        systemCaches + systemLogs + tempFiles + photos + appCachesOnly + appTmpOnly,
-        [self humanBinarySize:systemCaches + systemLogs + tempFiles + photos + appCachesOnly + appTmpOnly]];
+        systemCaches + systemLogs + tempFiles + photos + sharedTotal + appCachesOnly + appTmpOnly,
+        [self humanBinarySize:systemCaches + systemLogs + tempFiles + photos + sharedTotal
+                              + appCachesOnly + appTmpOnly]];
 
     [out appendString:@"\n================================\n"];
     [out appendString:@"Scan complete.\n"];
