@@ -63,6 +63,14 @@ NSString *_Nullable AccessFailure(NSString *path) {
     return [NSString stringWithFormat:@"%.2f %@", v, units[i]];
 }
 
++ (NSString *)timestampNow {
+    NSDateFormatter *f = [[NSDateFormatter alloc] init];
+    f.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    f.timeZone = [NSTimeZone systemTimeZone];
+    f.dateFormat = @"yyyy-MM-dd HH:mm:ss Z";
+    return [f stringFromDate:[NSDate date]];
+}
+
 static unsigned long long SumOf(NSArray<NSString *> *paths,
                                 NSDictionary<NSString *, NSNumber *> *sizes) {
     unsigned long long total = 0;
@@ -72,10 +80,11 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
 
 - (NSString *)fullReadOnlyReport {
     NSMutableString *out = [NSMutableString string];
-    [out appendString:@"iOS Cleaner Inspector 0.2.4\n"];
+    [out appendString:@"iOS Cleaner Inspector 0.2.5\n"];
     [out appendString:@"READ-ONLY MODE - NO FILE DELETION\n"];
     [out appendFormat:@"running as uid=%d euid=%d gid=%d egid=%d\n",
         (int)getuid(), (int)geteuid(), (int)getgid(), (int)getegid()];
+    [out appendFormat:@"scan started:  %@\n", [Scanner timestampNow]];
     [out appendString:@"================================\n\n"];
 
     SystemScanner *system = [SystemScanner shared];
@@ -158,6 +167,7 @@ static unsigned long long SumOf(NSArray<NSString *> *paths,
                               + appCachesOnly + appTmpOnly]];
 
     [out appendString:@"\n================================\n"];
+    [out appendFormat:@"scan finished: %@\n", [Scanner timestampNow]];
     [out appendString:@"Scan complete.\n"];
     return out;
 }

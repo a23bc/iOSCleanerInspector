@@ -16,6 +16,10 @@ NSString *_Nullable AccessFailure(NSString *path);
    "990.71M" matched /tmp + Downloads in MiB to two decimals - so the category
    summary below is printed in the same unit to make comparison direct. */
 - (NSString *)humanBinarySize:(unsigned long long)bytes;
+/* Local-time "yyyy-MM-dd HH:mm:ss Z". Caches churn, and two scans taken
+   minutes apart can disagree by hundreds of MB; without stamps there is no way
+   to tell measurement drift from a genuine difference in definition. */
++ (NSString *)timestampNow;
 @end
 
 NS_ASSUME_NONNULL_END
