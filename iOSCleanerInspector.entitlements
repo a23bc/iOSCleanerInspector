@@ -36,13 +36,12 @@
     <false/>
 
     <!-- "Unrestricted accessible containers": this single key is what makes
-         TrollStore show "Accessible Containers: Unrestricted". -->
+         TrollStore show "Accessible Containers: Unrestricted". Needed to read
+         app data containers (including their metadata plist). -->
     <key>com.apple.private.security.storage.AppDataContainers</key>
     <true/>
-    <key>com.apple.private.security.storage.AppBundles</key>
-    <true/>
-    <key>com.apple.private.security.storage.MobileDocuments</key>
-    <true/>
+    <!-- Dropped in 0.3.0 along with the paths they served: AppBundles and
+         MobileDocuments are not audited any more, so they are not requested. -->
 
     <!-- Resolve container UUID -> app display name. -->
     <key>com.apple.private.MobileContainerManager.allowed</key>
@@ -52,6 +51,12 @@
 
     <!-- Every directory below ends with "/": without the trailing slash the
          exception applies to the node itself, not to its contents. -->
+    <!-- 0.3.0: trimmed to what the audit actually reads. The cleaner's targets
+         are /tmp (== /var/tmp), /var/mobile/Library/Caches and per-app
+         Library/Caches + tmp. Everything the safety review marked "must not be
+         deleted" (logs, downloads, Photos data, daemon/plugin/shared/system
+         containers) is no longer requested either - we do not scan it, so we
+         should not hold permission to read it. -->
     <key>com.apple.security.exception.files.absolute-path.read-only</key>
     <array>
         <string>/</string>
@@ -59,25 +64,12 @@
         <string>/tmp/</string>
         <string>/var/</string>
         <string>/var/tmp/</string>
-        <string>/var/containers/</string>
-        <string>/var/containers/Bundle/</string>
-        <string>/var/containers/Bundle/Application/</string>
-        <string>/var/containers/Data/</string>
         <string>/var/mobile/</string>
         <string>/var/mobile/Containers/</string>
         <string>/var/mobile/Containers/Data/</string>
         <string>/var/mobile/Containers/Data/Application/</string>
-        <string>/var/mobile/Containers/Shared/</string>
         <string>/var/mobile/Library/</string>
         <string>/var/mobile/Library/Caches/</string>
-        <string>/var/mobile/Library/Logs/</string>
-        <string>/var/mobile/Library/Preferences/</string>
-        <string>/var/mobile/Library/Preferences/Logs/</string>
-        <string>/var/mobile/Library/Mobile Documents/</string>
-        <string>/var/mobile/Media/</string>
-        <string>/var/mobile/Media/PhotoData/</string>
-        <string>/var/mobile/Media/PhotoData/Caches/</string>
-        <string>/var/mobile/Media/PhotoData/Thumbnails/</string>
     </array>
     <key>com.apple.security.exception.files.home-relative-path.read-only</key>
     <array>
