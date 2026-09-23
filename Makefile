@@ -18,8 +18,7 @@ CODESIGN := codesign --force --sign - --generate-entitlement-der --timestamp=non
 SOURCES := \
 	iOSCleanerInspector/AppDelegate.m \
 	iOSCleanerInspector/Cleaner/CleanerViewController.m \
-	iOSCleanerInspector/Cleaner/CleanupPlanner.m \
-	iOSCleanerInspector/Scanner/Scanner.m
+	iOSCleanerInspector/Cleaner/CleanupPlanner.m
 
 .PHONY: all clean sign verify package
 

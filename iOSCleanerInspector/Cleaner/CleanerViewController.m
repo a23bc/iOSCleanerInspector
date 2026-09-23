@@ -41,12 +41,12 @@ static NSString *HumanBytes(unsigned long long bytes) {
     self.title = @"Safe Cleaner";
     self.view.backgroundColor = UIColor.systemBackgroundColor;
 
-    self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.table = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, 0, 0) style:UITableViewStylePlain];
     self.table.dataSource = self;
     self.table.delegate = self;
     self.table.rowHeight = 44;
 
-    self.log = [[UITextView alloc] init];
+    self.log = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, 0, 0)];
     self.log.editable = NO;
     self.log.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
     self.log.text = @"Ready.\n\n"
