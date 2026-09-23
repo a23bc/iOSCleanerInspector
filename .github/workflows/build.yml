@@ -23,31 +23,43 @@ jobs:
         run: |
           make package
 
+      # APP_NAME comes from the Makefile, so the same workflow serves both the
+      # read-only inspector (main) and the cleaner branch.
+      - name: Resolve artifact paths
+        id: paths
+        run: |
+          set -euo pipefail
+          APP=$(ls -d build/Payload/*.app | head -1)
+          NAME=$(basename "$APP" .app)
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+          echo "bin=$APP/$NAME" >> "$GITHUB_OUTPUT"
+          echo "tipa=$(ls build/*.tipa | head -1)" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
       - name: Verify code signature and entitlements
         run: |
           set -euo pipefail
           echo "== codesign =="
-          codesign --display --verbose=2 build/Payload/iOSCleanerInspector.app
+          codesign --display --verbose=2 "${{ steps.paths.outputs.app }}"
           echo "== entitlements actually granted by the signature =="
           # NOT "codesign --entitlements :-" : that form is deprecated.
           codesign --display --entitlements "$RUNNER_TEMP/granted.plist" --xml \
-            build/Payload/iOSCleanerInspector.app
+            "${{ steps.paths.outputs.app }}"
           cat "$RUNNER_TEMP/granted.plist"
           echo "== entitlements embedded in __TEXT (independent re-read) =="
-          python3 tools/decompile/extract_entitlements.py \
-            build/Payload/iOSCleanerInspector.app/iOSCleanerInspector
+          python3 tools/decompile/extract_entitlements.py "${{ steps.paths.outputs.bin }}"
 
       - name: Inspect artifact
         run: |
-          unzip -l build/iOSCleanerInspector.tipa
-          file build/Payload/iOSCleanerInspector.app/iOSCleanerInspector
+          unzip -l "${{ steps.paths.outputs.tipa }}"
+          file "${{ steps.paths.outputs.bin }}"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
-            build/Payload/iOSCleanerInspector.app/Info.plist
+            "${{ steps.paths.outputs.app }}/Info.plist"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: iOSCleanerInspector-${{ github.sha }}
+          name: ${{ steps.paths.outputs.name }}-${{ github.sha }}
           path: |
-            build/iOSCleanerInspector.tipa
-            build/Payload/iOSCleanerInspector.app
+            ${{ steps.paths.outputs.tipa }}
+            ${{ steps.paths.outputs.app }}
