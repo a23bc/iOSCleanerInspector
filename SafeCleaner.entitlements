@@ -29,6 +29,9 @@
 
     <key>com.apple.private.security.storage.AppDataContainers</key>
     <true/>
+    <!-- Read-only, and only for showing the app name/icon in the list. -->
+    <key>com.apple.private.security.storage.AppBundles</key>
+    <true/>
 
     <key>com.apple.private.MobileContainerManager.allowed</key>
     <true/>
@@ -52,6 +55,13 @@
     <key>com.apple.security.exception.files.home-relative-path.read-only</key>
     <array>
         <string>/</string>
+    </array>
+    <!-- AppIconIndex needs this one extra path, read-only, for the icons. -->
+    <key>com.apple.security.exception.files.absolute-path.read-only</key>
+    <array>
+        <string>/var/containers/</string>
+        <string>/var/containers/Bundle/</string>
+        <string>/var/containers/Bundle/Application/</string>
     </array>
 </dict>
 </plist>

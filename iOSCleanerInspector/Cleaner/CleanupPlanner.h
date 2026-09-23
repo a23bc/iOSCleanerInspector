@@ -28,7 +28,16 @@ NS_ASSUME_NONNULL_BEGIN
 @interface CleanupPlanner : NSObject
 + (instancetype)shared;
 
-/* Long running: walks the container root. Call off the main thread. */
+/* Why discovery produced fewer targets than expected, in plain text. Empty
+   when everything worked. Surfaces the real Foundation/NSError text instead
+   of silently swallowing it. */
+@property (nonatomic, copy) NSString *diagnostic;
+
+/* Long running: walks the container root. Call off the main thread.
+   `progress(done, total, what)` is called as it goes. */
+- (NSArray<CleanItem *> *)discoverTargetsWithProgress:(void (^_Nullable)(NSUInteger done,
+                                                                        NSUInteger total,
+                                                                        NSString *what))progress;
 - (NSArray<CleanItem *> *)discoverTargets;
 
 /* Dry run: what would go, and what is deliberately left alone. */

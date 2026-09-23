@@ -1,13 +1,17 @@
 #import "CleanerViewController.h"
 #import "CleanupPlanner.h"
+#import "AppIconIndex.h"
 
-/* Filza URL scheme, documented by the vendor:
+/* Filza URL scheme, documented by the vendor's user guide:
      filza://view/path/to/file   (also filza://path/to/file)
-   https://www.tigisoftware.com/default/?page_id=177 */
-static NSString *FilzaURLForPath(NSString *path) {
+   https://www.tigisoftware.com/default/?page_id=177
+   Both forms are tried, and the attempt is logged so a failure can be diagnosed
+   instead of guessed at. */
+static NSArray<NSString *> *FilzaURLsForPath(NSString *path) {
     NSString *escaped = [path stringByAddingPercentEncodingWithAllowedCharacters:
-                         [NSCharacterSet URLPathAllowedCharacterSet]];
-    return [@"filza://view" stringByAppendingString:escaped ?: @""];
+                         [NSCharacterSet URLPathAllowedCharacterSet]] ?: path;
+    return @[[@"filza://view" stringByAppendingString:escaped],
+             [@"filza://" stringByAppendingString:escaped]];
 }
 
 static NSString *HumanBytes(unsigned long long bytes) {
@@ -19,16 +23,41 @@ static NSString *HumanBytes(unsigned long long bytes) {
     return [NSString stringWithFormat:@"%.2f %@", v, units[i]];
 }
 
+typedef NS_ENUM(NSUInteger, RowKind) {
+    RowKindGroup,      /* "全局目标" / "App 容器" - tap to expand */
+    RowKindItem,       /* one global directory, or one app container */
+    RowKindDirectory   /* a directory inside an item - tap to open in Filza */
+};
+
+@interface Row : NSObject
+@property (nonatomic, assign) RowKind kind;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *subtitle;
+@property (nonatomic, strong) UIImage *icon;
+@property (nonatomic, copy) NSString *path;
+@property (nonatomic, assign) BOOL expanded;
+@property (nonatomic, weak) CleanItem *item;
+@property (nonatomic, assign) NSUInteger indent;
+@end
+
+@implementation Row
+@end
+
 @interface CleanerViewController () <UITableViewDataSource, UITableViewDelegate>
+@property (nonatomic, strong) UIProgressView *progress;
+@property (nonatomic, strong) UILabel *status;
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, strong) UITextView *log;
 @property (nonatomic, strong) UIButton *dryRunButton;
 @property (nonatomic, strong) UIButton *deleteButton;
 @property (nonatomic, strong) UIButton *exportButton;
-@property (nonatomic, strong) UIActivityIndicatorView *spinner;
 
 @property (nonatomic, strong) NSArray<CleanItem *> *globalItems;
 @property (nonatomic, strong) NSArray<CleanItem *> *appItems;
+@property (nonatomic, strong) NSArray<Row *> *rows;
+@property (nonatomic, assign) BOOL groupGlobalOpen;
+@property (nonatomic, assign) BOOL groupAppsOpen;
+@property (nonatomic, strong) NSMutableSet<NSString *> *openItems;
 @property (nonatomic, strong) CleanPlan *plan;
 @property (nonatomic, assign) BOOL busy;
 @end
@@ -41,18 +70,22 @@ static NSString *HumanBytes(unsigned long long bytes) {
     self.title = @"Safe Cleaner";
     self.view.backgroundColor = UIColor.systemBackgroundColor;
 
+    self.status = [[UILabel alloc] init];
+    self.status.font = [UIFont systemFontOfSize:13];
+    self.status.text = @"准备中…";
+    self.status.numberOfLines = 2;
+
+    self.progress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+
     self.table = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, 0, 0) style:UITableViewStylePlain];
     self.table.dataSource = self;
     self.table.delegate = self;
-    self.table.rowHeight = 44;
+    self.table.rowHeight = 56;
 
     self.log = [[UITextView alloc] initWithFrame:CGRectMake(0, 0, 0, 0)];
     self.log.editable = NO;
     self.log.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
-    self.log.text = @"Ready.\n\n"
-                     "全选默认打开; 关掉的不参与清理。\n"
-                     "点目录行可以在 Filza 里打开它自己看。\n"
-                     "先 Dry run 出清单, 确认后才允许删除。\n";
+    self.log.text = @"Ready.\n";
 
     self.dryRunButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.dryRunButton setTitle:@"Dry run" forState:UIControlStateNormal];
@@ -74,12 +107,11 @@ static NSString *HumanBytes(unsigned long long bytes) {
     buttons.axis = UILayoutConstraintAxisHorizontal;
     buttons.distribution = UIStackViewDistributionFillEqually;
 
-    self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.spinner.hidesWhenStopped = YES;
+    UIStackView *top = [[UIStackView alloc] initWithArrangedSubviews:@[self.status, self.progress, self.table]];
+    top.axis = UILayoutConstraintAxisVertical;
+    top.spacing = 8;
 
-    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        self.spinner, self.table, buttons, self.log
-    ]];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[top, buttons, self.log]];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 8;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -90,10 +122,14 @@ static NSString *HumanBytes(unsigned long long bytes) {
         [stack.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:12],
         [stack.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-12],
         [stack.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8],
+        [self.status.heightAnchor constraintEqualToConstant:36],
         [buttons.heightAnchor constraintEqualToConstant:44],
-        [self.log.heightAnchor constraintEqualToConstant:190],
-        [self.spinner.heightAnchor constraintEqualToConstant:20]
+        [self.log.heightAnchor constraintEqualToConstant:160]
     ]];
+
+    self.openItems = [NSMutableSet set];
+    self.groupGlobalOpen = YES;
+    self.groupAppsOpen = NO;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -104,148 +140,226 @@ static NSString *HumanBytes(unsigned long long bytes) {
 - (void)setBusy:(BOOL)busy {
     _busy = busy;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (busy) [self.spinner startAnimating]; else [self.spinner stopAnimating];
         self.dryRunButton.enabled = !busy;
         self.deleteButton.enabled = (!busy && self.plan && self.plan.files.count);
     });
 }
 
+- (void)setProgress:(float)value status:(NSString *)text {
+    self.progress.progress = value;
+    self.status.text = text;
+}
+
 - (void)reload {
     self.busy = YES;
-    self.log.text = @"正在枚举目标(约需几分钟)...\n";
+    self.rows = @[];
+    [self.table reloadData];
+    [self setProgress:0 status:@"正在枚举目标…"];
+
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSArray<CleanItem *> *items = [[CleanupPlanner shared] discoverTargets];
+        CleanupPlanner *planner = [CleanupPlanner shared];
+        NSArray<CleanItem *> *items = [planner discoverTargetsWithProgress:^(NSUInteger done, NSUInteger total, NSString *what) {
+            if (done % 5 == 0 || done == total) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self setProgress:(total ? (float)done / (float)total : 0)
+                               status:[NSString stringWithFormat:@"枚举目标 %lu / %lu\n%@",
+                                       (unsigned long)done, (unsigned long)total, what]];
+                });
+            }
+        }];
+
         NSMutableArray<CleanItem *> *global = [NSMutableArray array];
         NSMutableArray<CleanItem *> *apps = [NSMutableArray array];
         for (CleanItem *item in items) {
             if ([item.title hasPrefix:@"/"]) [global addObject:item]; else [apps addObject:item];
         }
+
+        /* Icons and display names come from the installed bundles. */
+        [[AppIconIndex shared] buildWithProgress:^(NSUInteger done, NSUInteger total) {
+            if (done % 10 == 0 || done == total) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self setProgress:(total ? (float)done / (float)total : 0)
+                               status:[NSString stringWithFormat:@"读取 App 图标 %lu / %lu",
+                                       (unsigned long)done, (unsigned long)total]];
+                });
+            }
+        }];
+
         dispatch_async(dispatch_get_main_queue(), ^{
             self.globalItems = global;
             self.appItems = apps;
+            self.groupAppsOpen = YES;
+            [self rebuildRows];
             [self.table reloadData];
-            self.log.text = [NSString stringWithFormat:@"发现 %lu 个全局目标, %lu 个 App 容器。\n"
-                                                        "默认全选; 关掉的不参与。先 Dry run。\n",
-                             (unsigned long)global.count, (unsigned long)apps.count];
+            [self setProgress:1 status:[NSString stringWithFormat:@"完成: 全局 %lu 项, App %lu 个",
+                                        (unsigned long)global.count, (unsigned long)apps.count]];
+            self.log.text = [NSString stringWithFormat:@"%@\n发现全局目标 %lu 项, App 容器 %lu 个。\n"
+                                                        "默认全选; 点大项展开; 点目录行跳转 Filza。\n",
+                             planner.diagnostic ?: @"", (unsigned long)global.count, (unsigned long)apps.count];
             self.busy = NO;
         });
     });
 }
 
-- (CleanItem *)itemForSection:(NSInteger)section {
-    if (section == 0) return nil;
-    return self.appItems[section - 1];
+- (void)rebuildRows {
+    NSMutableArray<Row *> *rows = [NSMutableArray array];
+    AppIconIndex *icons = [AppIconIndex shared];
+
+    Row *globalGroup = [Row new];
+    globalGroup.kind = RowKindGroup;
+    globalGroup.title = @"全局目标";
+    globalGroup.subtitle = [NSString stringWithFormat:@"%lu 项", (unsigned long)self.globalItems.count];
+    globalGroup.expanded = self.groupGlobalOpen;
+    [rows addObject:globalGroup];
+
+    if (self.groupGlobalOpen) {
+        for (CleanItem *item in self.globalItems) {
+            Row *row = [Row new];
+            row.kind = RowKindItem;
+            row.title = item.title;
+            row.subtitle = HumanBytes(item.bytes);
+            row.path = item.directories.firstObject;
+            row.item = item;
+            row.indent = 1;
+            [rows addObject:row];
+            [self appendDirectoriesOf:item toRows:rows];
+        }
+    }
+
+    Row *appGroup = [Row new];
+    appGroup.kind = RowKindGroup;
+    appGroup.title = @"App 容器";
+    appGroup.subtitle = [NSString stringWithFormat:@"%lu 个", (unsigned long)self.appItems.count];
+    appGroup.expanded = self.groupAppsOpen;
+    [rows addObject:appGroup];
+
+    if (self.groupAppsOpen) {
+        for (CleanItem *item in self.appItems) {
+            Row *row = [Row new];
+            row.kind = RowKindItem;
+            NSString *name = [icons displayNameForBundleID:item.title];
+            row.title = name ? [NSString stringWithFormat:@"%@  (%@)", name, item.title] : item.title;
+            row.subtitle = HumanBytes(item.bytes);
+            row.icon = [icons iconForBundleID:item.title];
+            row.item = item;
+            row.indent = 1;
+            [rows addObject:row];
+            [self appendDirectoriesOf:item toRows:rows];
+        }
+    }
+
+    self.rows = rows;
+}
+
+- (void)appendDirectoriesOf:(CleanItem *)item toRows:(NSMutableArray<Row *> *)rows {
+    if (![self.openItems containsObject:item.title]) return;
+    for (NSUInteger i = 0; i < item.directories.count; i++) {
+        NSString *dir = item.directories[i];
+        Row *row = [Row new];
+        row.kind = RowKindDirectory;
+        NSArray<NSString *> *parts = [dir componentsSeparatedByString:@"/"];
+        NSString *tail = parts.count >= 3
+            ? [NSString stringWithFormat:@"%@/%@", parts[parts.count - 3], parts[parts.count - 1]]
+            : dir.lastPathComponent;
+        row.title = [@"↳ " stringByAppendingString:tail];
+        row.subtitle = i < item.directorySizes.count
+            ? HumanBytes([item.directorySizes[i] unsignedLongLongValue]) : @"-";
+        row.path = dir;
+        row.indent = 2;
+        [rows addObject:row];
+    }
 }
 
 #pragma mark - table
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    if (!self.appItems) return 0;
-    return 1 + (NSInteger)self.appItems.count;
-}
-
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return (NSInteger)self.globalItems.count;
-    return (NSInteger)[self itemForSection:section].directories.count;
-}
-
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return section == 0 ? @"全局目标" : nil;
-}
-
-- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return section == 0 ? 28 : 52;
-}
-
-- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    CGFloat width = tableView.bounds.size.width;
-    if (section == 0) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(12, 0, width - 24, 28)];
-        label.text = @"全局目标";
-        label.font = [UIFont boldSystemFontOfSize:13];
-        return label;
-    }
-
-    CleanItem *item = [self itemForSection:section];
-    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 52)];
-    header.backgroundColor = UIColor.secondarySystemBackgroundColor;
-
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(12, 0, width - 100, 52)];
-    label.text = [NSString stringWithFormat:@"%@\n%@", item.title, HumanBytes(item.bytes)];
-    label.font = [UIFont systemFontOfSize:13];
-    label.numberOfLines = 2;
-
-    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(width - 63, 10, 0, 0)];
-    sw.on = item.selected;
-    sw.tag = section;
-    [sw addTarget:self action:@selector(toggleItem:) forControlEvents:UIControlEventValueChanged];
-
-    [header addSubview:label];
-    [header addSubview:sw];
-    return header;
+    return (NSInteger)self.rows.count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    static NSString *cellId = @"dir";
+    static NSString *cellId = @"row";
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellId];
-    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellId];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellId];
 
-    NSString *path;
-    if (indexPath.section == 0) {
-        CleanItem *item = self.globalItems[indexPath.row];
-        path = item.directories.firstObject;
-        cell.textLabel.text = path;
-        cell.detailTextLabel.text = HumanBytes(item.bytes);
+    Row *row = self.rows[indexPath.row];
+    cell.textLabel.text = row.title;
+    cell.detailTextLabel.text = row.subtitle;
+    cell.imageView.image = row.icon;
+    cell.indentationLevel = row.indent;
+
+    if (row.kind == RowKindGroup) {
+        cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
         cell.accessoryView = nil;
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.accessoryType = row.expanded ? UITableViewCellAccessoryCheckmark
+                                          : UITableViewCellAccessoryDisclosureIndicator;
+    } else if (row.kind == RowKindItem) {
+        cell.textLabel.font = [UIFont systemFontOfSize:14];
+        UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(0, 0, 0, 0)];
+        sw.on = row.item.selected;
+        sw.tag = indexPath.row;
+        [sw addTarget:self action:@selector(toggleItem:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+        cell.accessoryType = UITableViewCellAccessoryNone;
     } else {
-        path = [self itemForSection:indexPath.section].directories[indexPath.row];
-        NSArray<NSString *> *parts = [path componentsSeparatedByString:@"/"];
-        NSString *tail = parts.count >= 3
-            ? [NSString stringWithFormat:@"%@/%@", parts[parts.count - 3], parts[parts.count - 1]]
-            : path.lastPathComponent;
-        cell.textLabel.text = tail;
-        CleanItem *item = [self itemForSection:indexPath.section];
-        if (indexPath.row < (NSInteger)item.directorySizes.count) {
-            cell.detailTextLabel.text = HumanBytes([item.directorySizes[indexPath.row] unsignedLongLongValue]);
-        } else {
-            cell.detailTextLabel.text = @"-";
-        }
+        cell.textLabel.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
         cell.accessoryView = nil;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
-    cell.textLabel.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
     return cell;
 }
 
-/* Tapping a directory opens it in Filza, so the user can look before deleting. */
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    Row *row = self.rows[indexPath.row];
 
-    NSString *path;
-    if (indexPath.section == 0) path = self.globalItems[indexPath.row].directories.firstObject;
-    else path = [self itemForSection:indexPath.section].directories[indexPath.row];
-
-    NSURL *url = [NSURL URLWithString:FilzaURLForPath(path)];
-    if (!url) return;
-    UIApplication *app = UIApplication.sharedApplication;
-    if ([app canOpenURL:url]) {
-        [app openURL:url options:@{} completionHandler:^(BOOL success) {
-            if (!success) [self note:[NSString stringWithFormat:@"Filza 打开失败: %@", path]];
-        }];
-    } else {
-        [self note:@"未安装 Filza, 无法跳转。"];
+    if (row.kind == RowKindGroup) {
+        if ([row.title isEqualToString:@"全局目标"]) self.groupGlobalOpen = !self.groupGlobalOpen;
+        else self.groupAppsOpen = !self.groupAppsOpen;
+        [self rebuildRows];
+        [self.table reloadData];
+        return;
     }
+
+    if (row.kind == RowKindItem) {
+        NSString *key = row.item.title;
+        if ([self.openItems containsObject:key]) [self.openItems removeObject:key];
+        else [self.openItems addObject:key];
+        [self rebuildRows];
+        [self.table reloadData];
+        return;
+    }
+
+    [self openInFilza:row.path];
 }
 
 - (void)toggleItem:(UISwitch *)sender {
-    NSInteger section = sender.tag;
-    if (section == 0) {
-        CleanItem *item = self.globalItems[0];
-        item.selected = sender.on;
+    if (sender.tag < (NSInteger)self.rows.count) {
+        Row *row = self.rows[sender.tag];
+        row.item.selected = sender.on;
+    }
+}
+
+- (void)openInFilza:(NSString *)path {
+    if (!path) return;
+    UIApplication *app = UIApplication.sharedApplication;
+    [self note:[NSString stringWithFormat:@"跳转 Filza: %@", path]];
+
+    for (NSString *urlString in FilzaURLsForPath(path)) {
+        NSURL *url = [NSURL URLWithString:urlString];
+        if (!url) {
+            [self note:[NSString stringWithFormat:@"  URL 无效: %@", urlString]];
+            continue;
+        }
+        BOOL can = [app canOpenURL:url];
+        [self note:[NSString stringWithFormat:@"  %@  canOpenURL=%@", urlString, can ? @"YES" : @"NO"]];
+        if (!can) continue;
+        [app openURL:url options:@{} completionHandler:^(BOOL success) {
+            [self note:[NSString stringWithFormat:@"  openURL=%@", success ? @"YES" : @"NO"]];
+        }];
         return;
     }
-    [self itemForSection:section].selected = sender.on;
+    [self note:@"  没有可用的 Filza URL; 路径已复制到剪贴板, 可手动粘进 Filza。"];
+    [UIPasteboard generalPasteboard].string = path;
 }
 
 #pragma mark - actions
@@ -253,7 +367,7 @@ static NSString *HumanBytes(unsigned long long bytes) {
 - (void)dryRun:(id)sender {
     if (!self.appItems || self.busy) return;
     self.busy = YES;
-    self.log.text = @"Dry run 中...\n";
+    self.log.text = @"Dry run 中…\n";
 
     NSMutableArray<CleanItem *> *selected = [NSMutableArray array];
     for (CleanItem *item in self.globalItems) if (item.selected) [selected addObject:item];
@@ -272,13 +386,11 @@ static NSString *HumanBytes(unsigned long long bytes) {
 
 - (void)confirmDelete:(id)sender {
     if (!self.plan || !self.plan.files.count || self.busy) return;
-
     UIAlertController *alert =
         [UIAlertController alertControllerWithTitle:@"确认删除"
                                             message:[NSString stringWithFormat:@"将删除 %lu 个文件, 约 %@。\n"
                                                      "目录本身保留; 允许清单外的路径不会触及。",
-                                                     (unsigned long)self.plan.files.count,
-                                                     HumanBytes(self.plan.bytes)]
+                                                     (unsigned long)self.plan.files.count, HumanBytes(self.plan.bytes)]
                                      preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive
@@ -289,7 +401,7 @@ static NSString *HumanBytes(unsigned long long bytes) {
 
 - (void)runDelete {
     self.busy = YES;
-    self.log.text = @"删除中...\n";
+    self.log.text = @"删除中…\n";
     CleanPlan *plan = self.plan;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSString *report = [[CleanupPlanner shared] executePlan:plan];

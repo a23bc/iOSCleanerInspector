@@ -87,12 +87,23 @@ static NSString *_Nullable BundleIDForContainer(NSString *container) {
 }
 
 - (NSArray<CleanItem *> *)discoverTargets {
+    return [self discoverTargetsWithProgress:nil];
+}
+
+- (NSArray<CleanItem *> *)discoverTargetsWithProgress:(void (^)(NSUInteger, NSUInteger, NSString *))progress {
     NSMutableArray<CleanItem *> *items = [NSMutableArray array];
+    NSMutableString *diagnostic = [NSMutableString string];
 
     /* Global targets first, so they stay visible at the top. */
-    for (NSString *path in @[kTemp, kSystemCaches]) {
+    NSArray<NSString *> *globalPaths = @[kTemp, kSystemCaches];
+    for (NSUInteger i = 0; i < globalPaths.count; i++) {
+        NSString *path = globalPaths[i];
+        if (progress) progress(i, globalPaths.count, path);
         unsigned long long size = SizeOfTree(path);
-        if (size == 0) continue;
+        if (size == 0) {
+            [diagnostic appendFormat:@"%@: 0 bytes or unreadable\n", path];
+            continue;
+        }
         CleanItem *item = [CleanItem new];
         item.title = path;
         item.directories = @[path];
@@ -103,18 +114,41 @@ static NSString *_Nullable BundleIDForContainer(NSString *container) {
     }
 
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSArray *entries = [fm contentsOfDirectoryAtPath:kContainerRoot error:nil];
+
+    /* Do not swallow the error: if the container root cannot be listed we want
+       the exact reason in the UI, not an empty result set. */
+    NSError *listError = nil;
+    NSArray *entries = [fm contentsOfDirectoryAtPath:kContainerRoot error:&listError];
+    if (!entries) {
+        [diagnostic appendFormat:@"%@ 列表失败: %@\n", kContainerRoot,
+            listError.localizedDescription ?: @"(no description)"];
+        if (listError.userInfo[NSUnderlyingErrorKey]) {
+            [diagnostic appendFormat:@"  底层: %@\n", [listError.userInfo[NSUnderlyingErrorKey] localizedDescription]];
+        }
+        int e = errno;
+        if (e) [diagnostic appendFormat:@"  errno=%d\n", e];
+        self.diagnostic = diagnostic;
+        return items;
+    }
+
+    [diagnostic appendFormat:@"容器根目录条目: %lu\n", (unsigned long)entries.count];
+
+    NSUInteger index = 0;
+    NSUInteger skippedEmpty = 0, skippedNotDir = 0;
     for (NSString *uuid in entries) {
         @autoreleasepool {
+            index++;
+            if (progress) progress(index, entries.count, uuid);
+
             NSString *container = [kContainerRoot stringByAppendingPathComponent:uuid];
             BOOL isDir = NO;
-            if (![fm fileExistsAtPath:container isDirectory:&isDir] || !isDir) continue;
+            if (![fm fileExistsAtPath:container isDirectory:&isDir] || !isDir) { skippedNotDir++; continue; }
 
             NSString *caches = [container stringByAppendingPathComponent:@"Library/Caches"];
             NSString *tmp = [container stringByAppendingPathComponent:@"tmp"];
             unsigned long long cacheBytes = SizeOfTree(caches);
             unsigned long long tmpBytes = SizeOfTree(tmp);
-            if (cacheBytes == 0 && tmpBytes == 0) continue;
+            if (cacheBytes == 0 && tmpBytes == 0) { skippedEmpty++; continue; }
 
             CleanItem *item = [CleanItem new];
             item.title = BundleIDForContainer(container) ?: uuid;
@@ -125,11 +159,14 @@ static NSString *_Nullable BundleIDForContainer(NSString *container) {
             [items addObject:item];
         }
     }
+    [diagnostic appendFormat:@"跳过(非目录): %lu  跳过(空): %lu  保留: %lu\n",
+        (unsigned long)skippedNotDir, (unsigned long)skippedEmpty, (unsigned long)items.count];
 
     [items sortUsingComparator:^NSComparisonResult(CleanItem *a, CleanItem *b) {
         if (a.bytes == b.bytes) return [a.title compare:b.title];
         return a.bytes > b.bytes ? NSOrderedAscending : NSOrderedDescending;
     }];
+    self.diagnostic = diagnostic;
     return items;
 }
 
