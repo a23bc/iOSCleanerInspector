@@ -1,5 +1,5 @@
-APP_NAME := iOSCleanerInspector
-BUNDLE_ID := com.a23bc.iOSCleanerInspector
+APP_NAME := SafeCleaner
+BUNDLE_ID := com.a23bc.SafeCleaner
 BUILD_DIR := build
 APP_DIR := $(BUILD_DIR)/$(APP_NAME).app
 PAYLOAD_DIR := $(BUILD_DIR)/Payload
@@ -17,11 +17,9 @@ CODESIGN := codesign --force --sign - --generate-entitlement-der --timestamp=non
 
 SOURCES := \
 	iOSCleanerInspector/AppDelegate.m \
-	iOSCleanerInspector/ViewController.m \
-	iOSCleanerInspector/Scanner/Scanner.m \
-	iOSCleanerInspector/Scanner/Auditor.m \
-	iOSCleanerInspector/Scanner/AppScanner.m \
-	iOSCleanerInspector/Scanner/SystemScanner.m
+	iOSCleanerInspector/Cleaner/CleanerViewController.m \
+	iOSCleanerInspector/Cleaner/CleanupPlanner.m \
+	iOSCleanerInspector/Scanner/Scanner.m
 
 .PHONY: all clean sign verify package
 

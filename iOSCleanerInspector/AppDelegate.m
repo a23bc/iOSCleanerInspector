@@ -1,5 +1,5 @@
 #import <UIKit/UIKit.h>
-#import "ViewController.h"
+#import "Cleaner/CleanerViewController.h"
 
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property(nonatomic, strong) UIWindow *window;
@@ -10,7 +10,9 @@
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    self.window.rootViewController = [[ViewController alloc] init];
+    UINavigationController *nav =
+        [[UINavigationController alloc] initWithRootViewController:[CleanerViewController new]];
+    self.window.rootViewController = nav;
     [self.window makeKeyAndVisible];
     return YES;
 }
